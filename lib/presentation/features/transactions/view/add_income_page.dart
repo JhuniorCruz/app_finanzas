@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../presentation/widgets/money_input.dart';
 import '../../transactions/controller/transactions_controller.dart';
@@ -15,8 +16,9 @@ class AddIncomePage extends StatefulWidget {
 
 class _AddIncomePageState extends State<AddIncomePage> {
   IncomeKind kind = IncomeKind.recibo;
-  final grossCtrl = TextEditingController();
-  final discCtrl = TextEditingController();
+
+  final grossCtrl = TextEditingController(); // bruto
+  final discCtrl = TextEditingController(); // retenciones/aportes
 
   double get gross => parseMoney(grossCtrl.text);
   double get disc => parseMoney(discCtrl.text);
@@ -38,85 +40,200 @@ class _AddIncomePageState extends State<AddIncomePage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _segmented(value: kind, onChanged: (v) => setState(() => kind = v)),
-          const SizedBox(height: 12),
+          // ===== Selector tipo de ingreso (pastillas) =====
+          _SegmentedKind(
+            value: kind,
+            onChanged: (k) => setState(() => kind = k),
+          ),
 
+          const SizedBox(height: 16),
+
+          // ===== Card con campos =====
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: Colors.white,
-              border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
+              border: Border.all(color: AppColors.border),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
               children: [
+                // Ingreso bruto
                 MoneyInput(label: 'Ingreso bruto', controller: grossCtrl),
                 const SizedBox(height: 12),
+
+                // Retenciones / Aportes
                 MoneyInput(
                   label: isRecibo
                       ? 'Retenciones (impuestos)'
                       : 'Aportes (AFP/ONP, salud, etc.)',
                   controller: discCtrl,
                 ),
+
+                const SizedBox(height: 18),
+
+                // Neto estimado (card azul suave)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF2F4FF),
+                    border: Border.all(color: const Color(0xFFCDD4FF)),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Neto estimado',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(color: const Color(0xFF475569)),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        formatCurrency(net),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.foreground,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                Text(
+                  isRecibo
+                      ? 'El monto neto se calcula restando las retenciones al bruto'
+                      : 'El monto neto se calcula restando los aportes obligatorios al bruto',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.foreground.withOpacity(.7),
+                  ),
+                ),
               ],
             ),
           ),
 
-          const SizedBox(height: 12),
-          _resultCard('Neto estimado', formatCurrency(net)),
+          const SizedBox(height: 100), // espacio para que no lo tape el botón
         ],
       ),
+
+      // ===== Botón fijo inferior (estilo original) =====
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Guardar'),
-            onPressed: gross > 0
-                ? () async {
-                    await context.read<TransactionsController>().addIncome(
-                      category: isRecibo ? 'recibo' : 'planilla',
-                      gross: gross,
-                      netAmount: net,
-                      date: DateTime.now(),
-                    );
-                    if (context.mounted) Navigator.pop(context);
-                  }
-                : null,
+          child: SizedBox(
+            height: 56,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: gross > 0
+                  ? () async {
+                      await context.read<TransactionsController>().addIncome(
+                        category: isRecibo ? 'recibo' : 'planilla',
+                        gross: gross,
+                        netAmount: net,
+                        date: DateTime.now(),
+                      );
+                      if (context.mounted) Navigator.pop(context);
+                    }
+                  : null,
+              child: const Text('Guardar'),
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _segmented({
-    required IncomeKind value,
-    required ValueChanged<IncomeKind> onChanged,
-  }) {
-    return SegmentedButton<IncomeKind>(
-      segments: const [
-        ButtonSegment(value: IncomeKind.recibo, label: Text('Recibos')),
-        ButtonSegment(value: IncomeKind.planilla, label: Text('Planilla')),
-      ],
-      selected: {value},
-      onSelectionChanged: (s) => onChanged(s.first),
+/// Selector “Recibos / Planilla” con estilo pastilla
+class _SegmentedKind extends StatelessWidget {
+  final IncomeKind value;
+  final ValueChanged<IncomeKind> onChanged;
+  const _SegmentedKind({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    const bg = Color(0xFFF1F5F9); // gris muy claro
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          _SegButton(
+            text: 'Recibos',
+            selected: value == IncomeKind.recibo,
+            onTap: () => onChanged(IncomeKind.recibo),
+          ),
+          _SegButton(
+            text: 'Planilla',
+            selected: value == IncomeKind.planilla,
+            onTap: () => onChanged(IncomeKind.planilla),
+          ),
+        ],
+      ),
     );
   }
+}
 
-  Widget _resultCard(String title, String value) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF2F4FF),
-      border: Border.all(color: const Color(0xFFCDD4FF), width: 2),
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(title, style: const TextStyle(color: Color(0xFF475569))),
+class _SegButton extends StatelessWidget {
+  final String text;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SegButton({
+    required this.text,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: selected ? AppColors.foreground : const Color(0xFF64748B),
+            ),
+          ),
         ),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }

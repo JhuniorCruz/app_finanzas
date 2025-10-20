@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../core/utils/formatters.dart';
-import '../../../../presentation/widgets/money_input.dart';
-import '../../../../presentation/widgets/category_chip.dart';
-import '../../transactions/controller/transactions_controller.dart';
+import 'package:app_finanzas/core/theme/app_theme.dart';
+import 'package:app_finanzas/core/utils/formatters.dart';
+import 'package:app_finanzas/presentation/widgets/money_input.dart';
+import 'package:app_finanzas/presentation/widgets/category_chip.dart';
+import 'package:app_finanzas/presentation/features/transactions/controller/transactions_controller.dart';
 
 class AddExpensePage extends StatefulWidget {
   const AddExpensePage({super.key});
@@ -49,6 +50,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ===== Categorías (chips) =====
           Text('Categoría', style: Theme.of(context).textTheme.labelMedium),
           const SizedBox(height: 8),
           Wrap(
@@ -65,19 +67,23 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 )
                 .toList(),
           ),
-          const SizedBox(height: 12),
 
+          const SizedBox(height: 16),
+
+          // ===== Card de campos =====
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: Colors.white,
-              border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
+              border: Border.all(color: AppColors.border),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
               children: [
                 MoneyInput(label: 'Monto', controller: amountCtrl),
                 const SizedBox(height: 12),
+
+                // Selector de fecha con aspecto de input
                 InkWell(
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -93,8 +99,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       });
                     }
                   },
+                  borderRadius: BorderRadius.circular(12),
                   child: InputDecorator(
-                    decoration: const InputDecoration(labelText: 'Fecha'),
+                    decoration: const InputDecoration(
+                      labelText: 'Fecha',
+                      border: OutlineInputBorder(),
+                      filled: true,
+                    ),
                     child: Row(
                       children: [
                         const Icon(
@@ -108,45 +119,63 @@ class _AddExpensePageState extends State<AddExpensePage> {
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 12),
                 TextField(
                   controller: noteCtrl,
+                  maxLines: 2,
                   decoration: const InputDecoration(
                     labelText: 'Nota (opcional)',
                   ),
-                  maxLines: 2,
                 ),
               ],
             ),
           ),
+
+          const SizedBox(height: 100), // margen para que no tape el botón
         ],
       ),
+
+      // ===== Botón Guardar (fijo) =====
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Guardar'),
-            onPressed: () async {
-              final amount = parseMoney(amountCtrl.text);
-              if (amount <= 0 || category == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Completa categoría y monto válido'),
-                  ),
+          child: SizedBox(
+            height: 56,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: () async {
+                final amt = parseMoney(amountCtrl.text);
+                if (amt <= 0 || category == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Completa categoría y monto válido'),
+                    ),
+                  );
+                  return;
+                }
+                await context.read<TransactionsController>().addExpense(
+                  category: category!,
+                  amount: amt,
+                  date: selectedDate,
+                  note: noteCtrl.text.trim().isEmpty
+                      ? null
+                      : noteCtrl.text.trim(),
                 );
-                return;
-              }
-              await context.read<TransactionsController>().addExpense(
-                category: category!,
-                amount: amount,
-                date: selectedDate,
-                note: noteCtrl.text.trim().isEmpty
-                    ? null
-                    : noteCtrl.text.trim(),
-              );
-              if (context.mounted) Navigator.pop(context);
-            },
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: const Text('Guardar'),
+            ),
           ),
         ),
       ),

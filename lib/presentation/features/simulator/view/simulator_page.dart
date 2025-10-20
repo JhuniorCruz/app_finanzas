@@ -2,7 +2,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../../presentation/widgets/money_input.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/formatters.dart';
+import '../../../widgets/money_input.dart';
 
 enum SimTab { payroll, credit, savings }
 
@@ -15,14 +17,18 @@ class SimulatorPage extends StatefulWidget {
 class _SimulatorPageState extends State<SimulatorPage> {
   SimTab tab = SimTab.payroll;
 
+  // ---- Planilla
   final payGrossCtrl = TextEditingController();
   final payContribCtrl = TextEditingController();
 
+  // ---- Crédito
   final loanAmountCtrl = TextEditingController();
-  final loanRateCtrl = TextEditingController();
-  final loanMonthsCtrl = TextEditingController();
+  final loanRateCtrl = TextEditingController(); // % anual
+  final loanMonthsCtrl = TextEditingController(); // meses
 
-  final savingsTargetCtrl = TextEditingController();
+  // ---- Ahorro
+  final incomeCtrl = TextEditingController();
+  final targetPctCtrl = TextEditingController(text: '20'); // % meta
 
   @override
   void dispose() {
@@ -31,7 +37,8 @@ class _SimulatorPageState extends State<SimulatorPage> {
     loanAmountCtrl.dispose();
     loanRateCtrl.dispose();
     loanMonthsCtrl.dispose();
-    savingsTargetCtrl.dispose();
+    incomeCtrl.dispose();
+    targetPctCtrl.dispose();
     super.dispose();
   }
 
@@ -42,137 +49,288 @@ class _SimulatorPageState extends State<SimulatorPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          SegmentedButton<SimTab>(
-            segments: const [
-              ButtonSegment(value: SimTab.payroll, label: Text('Planilla')),
-              ButtonSegment(value: SimTab.credit, label: Text('Crédito')),
-              ButtonSegment(value: SimTab.savings, label: Text('Ahorro')),
-            ],
-            selected: {tab},
-            onSelectionChanged: (s) => setState(() => tab = s.first),
-          ),
-          const SizedBox(height: 12),
+          _SegControl(value: tab, onChanged: (v) => setState(() => tab = v)),
+          const SizedBox(height: 16),
 
           if (tab == SimTab.payroll) _buildPayroll(),
           if (tab == SimTab.credit) _buildCredit(),
           if (tab == SimTab.savings) _buildSavings(),
-          const SizedBox(height: 60),
+
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  // --- secciones ---
-
-  Widget _card(Widget child) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
-    ),
-    child: child,
-  );
+  // ================== Secciones ==================
 
   Widget _buildPayroll() {
-    final gross = _toDouble(payGrossCtrl.text);
-    final contrib = _toDouble(payContribCtrl.text);
-    final net = math.max(0, gross - contrib);
+    final gross = parseMoney(payGrossCtrl.text);
+    final contrib = parseMoney(payContribCtrl.text);
+    final net = math.max(0.0, gross - contrib).toDouble();
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _card(
-          Column(
-            children: [
-              MoneyInput(controller: payGrossCtrl, label: 'Ingreso bruto'),
-              const SizedBox(height: 12),
-              MoneyInput(
-                controller: payContribCtrl,
-                label: 'Aportes (ESSALUD/AFP/etc.)',
-              ),
-            ],
-          ),
+        _Card(
+          children: [
+            MoneyInput(label: 'Ingreso bruto', controller: payGrossCtrl),
+            const SizedBox(height: 12),
+            MoneyInput(
+              label: 'Aportes (ESSALUD/AFP/etc.)',
+              controller: payContribCtrl,
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        _result('Ingreso neto', net.toStringAsFixed(2)),
+        _ResultCard(title: 'Ingreso neto', value: formatCurrency(net)),
+        const SizedBox(height: 8),
+        const _Hint(
+          'El neto se calcula restando los aportes/retenciones al ingreso bruto.',
+        ),
       ],
     );
   }
 
   Widget _buildCredit() {
-    final P = _toDouble(loanAmountCtrl.text);
-    final i = (_toDouble(loanRateCtrl.text) / 100) / 12;
+    final P = parseMoney(loanAmountCtrl.text);
+    final i = _toDouble(loanRateCtrl.text) / 100 / 12; // mensual
     final n = int.tryParse(loanMonthsCtrl.text) ?? 0;
-    final cuota = (i == 0 || n == 0) ? 0 : (P * i) / (1 - math.pow(1 + i, -n));
+
+    final cuota = (i <= 0 || n <= 0)
+        ? 0.0
+        : (P * i) / (1 - math.pow(1 + i, -n));
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _card(
-          Column(
-            children: [
-              MoneyInput(controller: loanAmountCtrl, label: 'Monto'),
-              const SizedBox(height: 12),
-              TextField(
-                controller: loanRateCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(labelText: 'Tasa anual (%)'),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                ],
+        _Card(
+          children: [
+            MoneyInput(label: 'Monto', controller: loanAmountCtrl),
+            const SizedBox(height: 12),
+            TextField(
+              controller: loanRateCtrl,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: loanMonthsCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Meses'),
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              ),
-            ],
-          ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+              ],
+              decoration: const InputDecoration(labelText: 'Tasa anual (%)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: loanMonthsCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(labelText: 'Meses'),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        _result('Cuota estimada', cuota.toStringAsFixed(2)),
+        _ResultCard(title: 'Cuota estimada', value: formatCurrency(cuota)),
+        const SizedBox(height: 8),
+        const _Hint(
+          'Cálculo con fórmula de anualidades. El resultado es referencial.',
+        ),
       ],
     );
   }
 
   Widget _buildSavings() {
-    final pct = _toDouble(savingsTargetCtrl.text);
+    final income = parseMoney(incomeCtrl.text);
+    final pct = _toDouble(targetPctCtrl.text).clamp(0, 100);
+    final suggested = income * (pct / 100);
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _card(
-          TextField(
-            controller: savingsTargetCtrl,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Meta de ahorro mensual (%)',
+        _Card(
+          children: [
+            MoneyInput(label: 'Ingreso mensual', controller: incomeCtrl),
+            const SizedBox(height: 12),
+            TextField(
+              controller: targetPctCtrl,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9\.,]')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Meta de ahorro mensual (%)',
+              ),
             ),
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          ),
+          ],
         ),
         const SizedBox(height: 12),
-        _result('Puntaje educativo estimado', pct.toStringAsFixed(0)),
+        _ResultCard(title: 'Ahorro sugerido', value: formatCurrency(suggested)),
+        const SizedBox(height: 8),
+        const _Hint(
+          'Intenta mantener un porcentaje constante de ahorro cada mes.',
+        ),
       ],
     );
   }
 
-  Widget _result(String title, String value) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFE2E8F0), width: 2),
-    ),
-    child: Row(
-      children: [
-        Expanded(child: Text(title)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-      ],
-    ),
-  );
+  // ================== Helpers UI ==================
 
-  double _toDouble(String t) =>
-      double.tryParse(t.replaceAll(',', '').replaceAll(' ', '')) ?? 0.0;
+  double _toDouble(String text) {
+    final t = text.replaceAll(',', '.').replaceAll(' ', '');
+    return double.tryParse(t) ?? 0.0;
+  }
+}
+
+class _SegControl extends StatelessWidget {
+  final SimTab value;
+  final ValueChanged<SimTab> onChanged;
+  const _SegControl({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          _SegButton(
+            text: 'Planilla',
+            selected: value == SimTab.payroll,
+            onTap: () => onChanged(SimTab.payroll),
+          ),
+          _SegButton(
+            text: 'Crédito',
+            selected: value == SimTab.credit,
+            onTap: () => onChanged(SimTab.credit),
+          ),
+          _SegButton(
+            text: 'Ahorro',
+            selected: value == SimTab.savings,
+            onTap: () => onChanged(SimTab.savings),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegButton extends StatelessWidget {
+  final String text;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SegButton({
+    required this.text,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x14000000),
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: selected ? AppColors.foreground : const Color(0xFF64748B),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Card extends StatelessWidget {
+  final List<Widget> children;
+  const _Card({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppColors.border, width: 2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            children[i],
+            if (i < children.length - 1) const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ResultCard extends StatelessWidget {
+  final String title;
+  final String value;
+  const _ResultCard({required this.title, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF2F4FF),
+        border: Border.all(color: const Color(0xFFCDD4FF), width: 2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(color: Color(0xFF475569)),
+            ),
+          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+class _Hint extends StatelessWidget {
+  final String text;
+  const _Hint(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7E8),
+        border: Border.all(color: const Color(0xFFFFE3A3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(text, style: const TextStyle(color: Color(0xFFB45309))),
+    );
+  }
 }
