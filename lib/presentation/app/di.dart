@@ -29,6 +29,9 @@ import 'package:app_finanzas/presentation/features/simulator/controller/simulato
 import 'package:app_finanzas/presentation/features/transactions/controller/transactions_controller.dart';
 import 'package:app_finanzas/presentation/features/score/controller/score_controller.dart';
 
+import 'package:app_finanzas/data/repositories/auth_repository_impl.dart';
+import 'package:app_finanzas/presentation/features/auth/controller/auth_controller.dart';
+
 Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
   final storage = LocalStorage(prefs);
 
@@ -37,6 +40,9 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
   final txRepo = TransactionsRepositoryImpl(storage);
   // TIPAR como interfaz para evitar ambigüedades
   final ProfileRepository profileRepo = ProfileRepositoryImpl(storage);
+
+  // NUEVO: Auth
+  final authRepo = AuthRepositoryImpl(prefs);
 
   // Use cases
   final listDebts = ListDebts(debtsRepo);
@@ -52,6 +58,11 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
 
   // Providers
   return [
+    // NUEVO: AuthController (restaura sesión al crear)
+    ChangeNotifierProvider(
+      create: (_) => AuthController(authRepo)..checkSession(),
+    ),
+
     ChangeNotifierProvider(
       create: (_) => DebtsController(listDebts, addDebtUC, markPaidUC),
     ),

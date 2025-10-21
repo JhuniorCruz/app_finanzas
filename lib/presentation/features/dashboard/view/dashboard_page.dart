@@ -66,14 +66,15 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final double totalExpenses = monthTx
         .where((t) => t.type == 'expense')
-        .fold<double>(0.0, (s, t) => s + t.amount);
+        .fold<double>(0.0, (s, t) => s + t.amount.abs());
 
     final double available = totalIncome - totalExpenses;
 
     // ---- Gastos por categoría (ordenado desc) ----
     final Map<String, double> expensesByCat = {};
     for (final t in monthTx.where((t) => t.type == 'expense')) {
-      expensesByCat[t.category] = (expensesByCat[t.category] ?? 0.0) + t.amount;
+      expensesByCat[t.category] =
+          (expensesByCat[t.category] ?? 0.0) + t.amount.abs();
     }
 
     // ---- Métricas y score educativo ----
@@ -400,8 +401,8 @@ class _StatPill extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text(
-                  'Ingresos',
+                Text(
+                  label,
                   style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
                 FittedBox(

@@ -6,18 +6,17 @@ import 'package:app_finanzas/core/theme/app_theme.dart';
 import 'package:app_finanzas/presentation/app/di.dart';
 import 'package:app_finanzas/presentation/app/router.dart';
 
-// PANTALLAS que abrimos con rutas con nombre
+// Rutas con nombre
 import 'package:app_finanzas/presentation/features/transactions/view/add_income_page.dart';
 import 'package:app_finanzas/presentation/features/transactions/view/add_expense_page.dart';
 import 'package:app_finanzas/presentation/features/debts/view/add_debt_page.dart';
 import 'package:app_finanzas/presentation/features/debts/view/debt_detail_page.dart';
 
-// (Opcional) constantes para evitar typos
 class AppRoutes {
   static const addIncome = '/addIncome';
   static const addExpense = '/addExpense';
   static const addDebt = '/addDebt';
-  static const debtDetail = '/debtDetail'; // solo si luego navegas así
+  static const debtDetail = '/debtDetail';
 }
 
 Future<void> main() async {
@@ -36,8 +35,6 @@ class MyApp extends StatelessWidget {
       title: 'Control Financiero',
       theme: buildAppTheme(),
       debugShowCheckedModeBanner: false,
-
-      // Limita el textScale para evitar overflows
       builder: (context, child) {
         final mq = MediaQuery.of(context);
         return MediaQuery(
@@ -48,17 +45,16 @@ class MyApp extends StatelessWidget {
         );
       },
 
-      // Tu shell con el bottom nav y tabs
-      home: const AppShell(),
+      // Router raíz que decide AuthFlow vs AppShell
+      home: const AppRouter(),
 
-      // RUTAS CON NOMBRE usadas por pushNamed(...)
+      // rutas con nombre que se usan desde el dashboard/etc
       routes: {
         AppRoutes.addIncome: (_) => const AddIncomePage(),
         AppRoutes.addExpense: (_) => const AddExpensePage(),
         AppRoutes.addDebt: (_) => const AddDebtPage(),
       },
 
-      // (Opcional) si alguna vez llamas Navigator.pushNamed('/debtDetail', arguments: id)
       onGenerateRoute: (settings) {
         if (settings.name == AppRoutes.debtDetail) {
           final id = settings.arguments as String;
