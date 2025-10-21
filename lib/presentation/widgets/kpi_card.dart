@@ -43,15 +43,15 @@ class KpiCard extends StatelessWidget {
   }
 
   Color _valueColor(KpiStatus s) => {
-    KpiStatus.good: const Color(0xFF047857), // emerald-700
-    KpiStatus.warning: const Color(0xFF92400E), // amber-700
-    KpiStatus.danger: const Color(0xFFB91C1C), // red-700
+    KpiStatus.good: const Color(0xFF047857),
+    KpiStatus.warning: const Color(0xFF92400E),
+    KpiStatus.danger: const Color(0xFFB91C1C),
   }[s]!;
 
   Color _iconColor(KpiStatus s) => {
-    KpiStatus.good: const Color(0xFF059669), // emerald-600
-    KpiStatus.warning: const Color(0xFFD97706), // amber-600
-    KpiStatus.danger: const Color(0xFFDC2626), // red-600
+    KpiStatus.good: const Color(0xFF059669),
+    KpiStatus.warning: const Color(0xFFD97706),
+    KpiStatus.danger: const Color(0xFFDC2626),
   }[s]!;
 
   @override
@@ -75,7 +75,6 @@ class KpiCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          // Texto
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -104,7 +103,6 @@ class KpiCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // Chip circular para icono
           Container(
             width: 40,
             height: 40,
@@ -121,11 +119,10 @@ class KpiCard extends StatelessWidget {
 
     if (onTap == null) return card;
 
-    // ⬇︎ ENVOLVEMOS CON MATERIAL + INKWELL PARA QUE EL TAP FUNCIONE SIEMPRE
     return Material(
       color: Colors.transparent,
       borderRadius: borderRadius,
-      clipBehavior: Clip.antiAlias, // recorta el splash al borde redondeado
+      clipBehavior: Clip.antiAlias,
       child: InkWell(borderRadius: borderRadius, onTap: onTap, child: card),
     );
   }

@@ -3,68 +3,37 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
-import '../../../../core/utils/scoring.dart';
-import '../../debts/controller/debts_controller.dart';
-import 'add_debt_page.dart';
+import '../controller/debts_controller.dart';
 import 'debt_detail_page.dart';
 
-class DebtsPage extends StatefulWidget {
+class DebtsPage extends StatelessWidget {
   const DebtsPage({super.key});
-  @override
-  State<DebtsPage> createState() => _DebtsPageState();
-}
-
-class _DebtsPageState extends State<DebtsPage> {
-  bool _loaded = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_loaded) {
-      _loaded = true;
-      Future.microtask(() => context.read<DebtsController>().load());
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<DebtsController>();
-    final items = vm.items;
-
-    final pending = items.where((d) => !d.paid).toList();
-    final paid = items.where((d) => d.paid).toList();
+    final pending = vm.items.where((d) => !d.paid).toList();
 
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _Header(
-            onAdd: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const AddDebtPage()));
-            },
-          ),
+          const _Header(),
           const SizedBox(height: 16),
-
-          // ---- Pendientes ----
           Text('Pendientes', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
 
-          if (vm.loading)
-            const _LoadingCard()
-          else if (pending.isEmpty)
+          if (pending.isEmpty)
             const _EmptyState()
           else
             ...pending.map((d) {
               final dpd = d.paid ? 0 : getDaysPastDue(d.dueDate);
               final onTime = dpd <= 0;
-              final isCard = d.creditLimit != null;
-              final title = d.title; // <- en el original era "name"
+              final isCard = d.creditLimit != null; // deducimos tipo por límite
 
               return _DebtCard(
                 isCard: isCard,
-                title: title,
+                title: d.title,
                 subtitle:
                     'Cuota: ${formatCurrency(d.amount)} • Vence: ${formatDate(d.dueDate)}',
                 onTime: onTime,
@@ -78,44 +47,18 @@ class _DebtsPageState extends State<DebtsPage> {
               );
             }),
 
-          if (pending.isNotEmpty) const SizedBox(height: 16),
-
-          // ---- Pagadas ----
-          if (paid.isNotEmpty) ...[
-            Text('Pagadas', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            ...paid.map((d) {
-              final isCard = d.creditLimit != null;
-              final title = d.title;
-              return _DebtCard(
-                isCard: isCard,
-                title: title,
-                subtitle: 'Cuota: ${formatCurrency(d.amount)} • Pagada',
-                onTime: true,
-                dpd: 0,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => DebtDetailPage(debtId: d.id),
-                  ),
-                ),
-              );
-            }),
-          ],
-
-          const SizedBox(height: 80),
+          const SizedBox(height: 16),
+          const _InfoTip(),
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 }
 
-// =================== UI widgets (idénticos al original) ===================
-
+// ====== header ======
 class _Header extends StatelessWidget {
-  final VoidCallback onAdd;
-  const _Header({required this.onAdd});
-
+  const _Header();
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -130,23 +73,14 @@ class _Header extends StatelessWidget {
         boxShadow: const [
           BoxShadow(
             color: Color(0x22000000),
-            blurRadius: 12,
-            offset: Offset(0, 6),
+            blurRadius: 18,
+            offset: Offset(0, 8),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.white24,
-            child: Icon(
-              Icons.account_balance_wallet_rounded,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(width: 12),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,7 +102,7 @@ class _Header extends StatelessWidget {
             ),
           ),
           IconButton.filled(
-            onPressed: onAdd,
+            onPressed: () => Navigator.of(context).pushNamed('/addDebt'),
             style: IconButton.styleFrom(backgroundColor: Colors.white24),
             icon: const Icon(Icons.add, color: Colors.white),
           ),
@@ -178,6 +112,7 @@ class _Header extends StatelessWidget {
   }
 }
 
+// ====== card ======
 class _DebtCard extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -197,30 +132,48 @@ class _DebtCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pillBg = onTime ? const Color(0xFFEFFDF5) : const Color(0xFFFFEBEE);
-    final pillFg = onTime ? const Color(0xFF047857) : const Color(0xFFB91C1C);
+    final borderColor = onTime
+        ? const Color(0xFF86EFAC)
+        : const Color(0xFFFCA5A5);
+    final bgPill = onTime ? const Color(0xFFEFFDF5) : const Color(0xFFFFEBEE);
+    final fgPill = onTime ? const Color(0xFF047857) : const Color(0xFFB91C1C);
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
+        margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
-          border: Border.all(color: AppColors.border, width: 2),
+          border: Border.all(color: borderColor, width: 1.5),
           borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x11000000),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: isCard
-                  ? const Color(0xFFE0ECFF)
-                  : const Color(0xFFFDE68A),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: (onTime
+                    ? const Color(0xFFE6FFFA)
+                    : const Color(0xFFFFF5F5)),
+                shape: BoxShape.circle,
+              ),
               child: Icon(
-                isCard ? Icons.credit_card : Icons.account_balance,
-                color: const Color(0xFF334155),
+                isCard
+                    ? Icons.credit_card_rounded
+                    : Icons.account_balance_rounded,
+                color: onTime
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFFEF4444),
               ),
             ),
             const SizedBox(width: 12),
@@ -230,30 +183,35 @@ class _DebtCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.foreground,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: const TextStyle(color: Color(0xFF475569)),
+                    style: const TextStyle(color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: bgPill,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      onTime ? '✓ Al día' : '⚠ DPD $dpd',
+                      style: TextStyle(
+                        color: fgPill,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: pillBg,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                onTime ? 'A tiempo' : 'DPD: $dpd',
-                style: TextStyle(
-                  color: pillFg,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
               ),
             ),
           ],
@@ -263,9 +221,28 @@ class _DebtCard extends StatelessWidget {
   }
 }
 
+// ====== tip y empty ======
+class _InfoTip extends StatelessWidget {
+  const _InfoTip();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFF),
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Text(
+        'DPD = Días de atraso desde la fecha de vencimiento. Mantener DPD en 0 es fundamental para tu puntaje educativo.',
+        style: TextStyle(color: Color(0xFF475569)),
+      ),
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -276,30 +253,6 @@ class _EmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: const Center(child: Text('No tienes deudas pendientes.')),
-    );
-  }
-}
-
-class _LoadingCard extends StatelessWidget {
-  const _LoadingCard();
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 90,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: const Align(
-        alignment: Alignment.centerLeft,
-        child: SizedBox(
-          height: 18,
-          width: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
     );
   }
 }

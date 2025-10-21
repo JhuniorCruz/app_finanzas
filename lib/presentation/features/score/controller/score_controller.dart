@@ -1,3 +1,4 @@
+import 'package:app_finanzas/core/utils/formatters.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../../application/usecases/list_transactions.dart';

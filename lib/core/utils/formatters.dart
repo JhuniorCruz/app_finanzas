@@ -1,7 +1,6 @@
+// lib/core/utils/formatters.dart
 import 'package:intl/intl.dart';
 
-// Formatea con símbolo S/ y respeta signo negativo.
-// Mantiene tu lógica original (signo manual + NumberFormat).
 String formatCurrency(double amount) {
   final sign = amount < 0 ? '- ' : '';
   final abs = amount.abs();
@@ -9,17 +8,16 @@ String formatCurrency(double amount) {
   return '$sign${formatter.format(abs)}';
 }
 
-// Parsea textos tipo "S/ 1.234,56" o "1,234.56" -> double
 double parseCurrency(String value) {
   var cleaned = value.replaceAll('S/', '').replaceAll(' ', '');
   cleaned = cleaned.replaceAll('.', '').replaceAll(',', '.');
   return double.tryParse(cleaned) ?? 0.0;
 }
 
-// === Alias para compatibilidad con los views (AddDebtPage usa parseMoney) ===
+// ---- Shim de compatibilidad (nuestro código usa parseMoney) ----
 double parseMoney(String value) => parseCurrency(value);
 
-// Fechas numéricas simples (siempre válidas)
+// ✅ SIN DateFormat para fechas numéricas → nunca lanza excepciones
 String formatDate(DateTime d) {
   final dd = d.day.toString().padLeft(2, '0');
   final mm = d.month.toString().padLeft(2, '0');
@@ -39,6 +37,10 @@ DateTime parseDate(String s) {
   }
 }
 
-// ⚠️ Si ya definiste getDaysPastDue en core/utils/scoring.dart, elimina esta
-// función de aquí para evitar choques por "ambiguous import".
-// Si prefieres mantenerla aquí, no importes scoring.dart en los archivos que la usen.
+int getDaysPastDue(DateTime due) {
+  final today = DateTime.now();
+  final onlyDate = DateTime(today.year, today.month, today.day);
+  final onlyDue = DateTime(due.year, due.month, due.day);
+  final diff = onlyDate.difference(onlyDue).inDays;
+  return diff > 0 ? diff : 0;
+}

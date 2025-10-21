@@ -2,124 +2,182 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/utils/scoring.dart';
-import '../../score/controller/score_controller.dart';
+import '../../../../core/utils/formatters.dart'; // getDaysPastDue
+import '../../transactions/controller/transactions_controller.dart';
+import '../../debts/controller/debts_controller.dart';
+import '../../settings/controller/settings_controller.dart';
 
-class ScoreRecommendationsPage extends StatefulWidget {
+class ScoreRecommendationsPage extends StatelessWidget {
   const ScoreRecommendationsPage({super.key});
-  @override
-  State<ScoreRecommendationsPage> createState() =>
-      _ScoreRecommendationsPageState();
-}
 
-class _ScoreRecommendationsPageState extends State<ScoreRecommendationsPage> {
-  bool _loaded = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_loaded) {
-      _loaded = true;
-      Future.microtask(() => context.read<ScoreController>().load());
-    }
+  double _pct(num nume, num deno) {
+    if (deno <= 0) return 0;
+    final v = (nume / deno) * 100.0;
+    if (v.isNaN || v.isInfinite) return 0;
+    return v.clamp(0, 999).toDouble();
   }
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.watch<ScoreController>();
-    final r = vm.result;
-    final f = vm.factors;
+    final txs = context.watch<TransactionsController>().items;
+    final debts = context.watch<DebtsController>().items;
+    final profile = context.watch<SettingsController>().profile!;
+
+    // --- métricas actuales (mismo criterio que en detalle) ---
+    final now = DateTime.now();
+    final monthTx = txs
+        .where((t) => t.date.month == now.month && t.date.year == now.year)
+        .toList();
+
+    final double income = monthTx
+        .where((t) => t.type == 'income')
+        .fold<double>(0, (s, t) => s + t.amount);
+
+    final double expenses = monthTx
+        .where((t) => t.type == 'expense')
+        .fold<double>(0, (s, t) => s + t.amount);
+
+    final debtsActive = debts.where((d) => d.paid == false).toList();
+
+    final int dpdAvg = debtsActive.isEmpty
+        ? 0
+        : (debtsActive
+                      .map<int>((d) => getDaysPastDue(d.dueDate))
+                      .reduce((a, b) => a + b) /
+                  debtsActive.length)
+              .round();
+
+    final double installments = debtsActive.fold<double>(
+      0,
+      (s, d) => s + d.amount,
+    );
+
+    final dti = _pct(installments, income);
+
+    double utilization = 0;
+    final withLimit = debtsActive.where(
+      (d) => d.creditLimit != null && d.creditLimit! > 0,
+    );
+    if (withLimit.isNotEmpty) {
+      final used = withLimit.fold<double>(0, (s, d) => s + d.totalDebt);
+      final limit = withLimit.fold<double>(
+        0,
+        (s, d) => s + (d.creditLimit ?? 0),
+      );
+      utilization = _pct(used, limit);
+    }
+
+    final savingsRate = _pct(income - expenses, income);
+
+    // --- tips personalizados ---
+    final List<_Tip> tips = [];
+    if (dpdAvg > 0) {
+      tips.add(
+        const _Tip(
+          'Tienes pagos atrasados. Prioriza regularizar tus deudas para evitar más intereses y mejorar tu historial.',
+        ),
+      );
+    }
+    if (utilization > profile.utilizationThreshold) {
+      tips.add(
+        _Tip(
+          'Utilización > ${profile.utilizationThreshold.toStringAsFixed(0)}%. Intenta pagar más del mínimo este mes para reducir tu deuda.',
+        ),
+      );
+    }
+    if (dti > profile.debtToIncomeThreshold) {
+      tips.add(
+        const _Tip(
+          'Tus cuotas mensuales son altas respecto a tu ingreso. Evita asumir nuevas deudas hasta bajar tu Deuda/Ingreso.',
+        ),
+      );
+    }
+    if (savingsRate < profile.savingsTarget) {
+      tips.add(
+        _Tip(
+          'Aumenta gradualmente tu tasa de ahorro (meta: ${profile.savingsTarget.toStringAsFixed(0)}%). Revisa gastos prescindibles.',
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Recomendaciones')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Resumen actual
-          if (f != null && r != null) ...[
-            _summaryRow('DPD', '${f.dpd} días'),
-            _summaryRow(
-              'Deuda/Ingreso',
-              '${f.debtToIncome.toStringAsFixed(0)}%',
-            ),
-            _summaryRow('Utilización', '${f.utilization.toStringAsFixed(0)}%'),
-            _summaryRow(
-              'Tasa de ahorro',
-              '${f.savingsRate.toStringAsFixed(1)}%',
-            ),
-            const SizedBox(height: 14),
-          ],
-
-          // Acciones sugeridas
-          Text(
-            'Acciones sugeridas',
-            style: Theme.of(context).textTheme.titleMedium,
+          const Text(
+            'Tips personalizados basados en tu perfil financiero actual',
+            style: TextStyle(color: Color(0xFF64748B)),
           ),
-          const SizedBox(height: 10),
-          ..._tips(r).map(_bullet),
+          const SizedBox(height: 8),
+
+          if (tips.isEmpty)
+            _tipCard(
+              const _Tip(
+                '¡Vas muy bien! Mantén buenos hábitos de pago y ahorro para conservar tu puntaje.',
+              ),
+            )
+          else
+            ...tips.map(_tipCard),
 
           const SizedBox(height: 16),
-
-          // Recursos educativos (bloque estático del original)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Recursos educativos',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                SizedBox(height: 10),
-                _Bullet(
-                  'Mantén un fondo de emergencia equivalente a 3–6 meses de gastos',
-                ),
-                _Bullet('Revisa y ajusta tu presupuesto mensualmente'),
-                _Bullet('Evita la utilización alta de tus líneas de crédito'),
-                _Bullet('Prioriza deudas con mayor tasa de interés'),
-              ],
-            ),
-          ),
+          _resourcesCard(),
         ],
       ),
     );
   }
 
-  Widget _summaryRow(String label, String value) {
+  Widget _tipCard(_Tip tip) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(color: Color(0xFF64748B)),
-            ),
-          ),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const Icon(Icons.tips_and_updates_rounded, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(child: Text(tip.text)),
         ],
       ),
     );
   }
 
-  List<String> _tips(ScoreResult? r) {
-    if (r == null) return const [];
-    // Usa las recomendaciones del motor que ya definimos
-    return getRecommendations(r);
+  Widget _resourcesCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recursos educativos',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          SizedBox(height: 10),
+          _Bullet(
+            'Mantén un fondo de emergencia equivalente a 3–6 meses de gastos',
+          ),
+          _Bullet('Revisa y ajusta tu presupuesto mensualmente'),
+          _Bullet('Evita usar más del 30% de tu línea de crédito disponible'),
+          _Bullet('Paga tus deudas antes de la fecha de vencimiento'),
+        ],
+      ),
+    );
   }
+}
 
-  Widget _bullet(String text) => _Bullet(text);
+class _Tip {
+  final String text;
+  const _Tip(this.text);
 }
 
 class _Bullet extends StatelessWidget {

@@ -6,7 +6,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../presentation/widgets/money_input.dart';
 import '../../../../domain/entities/debt.dart';
-import '../../debts/controller/debts_controller.dart';
+import '../controller/debts_controller.dart';
 
 enum DebtType { creditCard, loan }
 
@@ -21,8 +21,8 @@ class _AddDebtPageState extends State<AddDebtPage> {
 
   final nameCtrl = TextEditingController();
   final feeCtrl = TextEditingController(); // cuota mensual
-  final totalCtrl = TextEditingController(); // deuda total / saldo actual
-  final limitCtrl = TextEditingController(); // línea (solo tarjeta)
+  final totalCtrl = TextEditingController(); // deuda total actual
+  final limitCtrl = TextEditingController(); // línea total (solo tarjeta)
   final dueDayCtrl = TextEditingController(text: '25');
 
   int get _dueDay => int.tryParse(dueDayCtrl.text.trim()) ?? 0;
@@ -42,10 +42,10 @@ class _AddDebtPageState extends State<AddDebtPage> {
     final clamp = day.clamp(1, 31);
     final thisMonth = DateTime(now.year, now.month, clamp);
     if (!thisMonth.isAfter(now)) {
-      final nextMonth = DateTime(now.year, now.month + 1, 1);
-      final lastDay = DateTime(nextMonth.year, nextMonth.month + 1, 0).day;
+      final next = DateTime(now.year, now.month + 1, 1);
+      final lastDay = DateTime(next.year, next.month + 1, 0).day;
       final d = clamp.clamp(1, lastDay);
-      return DateTime(nextMonth.year, nextMonth.month, d);
+      return DateTime(next.year, next.month, d);
     }
     return thisMonth;
   }
@@ -59,93 +59,66 @@ class _AddDebtPageState extends State<AddDebtPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== Tipo de deuda =====
           Text('Tipo de deuda', style: Theme.of(context).textTheme.labelMedium),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _TypeButton(
-                  icon: Icons.credit_card,
-                  title: 'Tarjeta',
-                  selected: isCard,
-                  onTap: () => setState(() => type = DebtType.creditCard),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _TypeButton(
-                  icon: Icons.account_balance_rounded,
-                  title: 'Préstamo',
-                  selected: !isCard,
-                  onTap: () => setState(() => type = DebtType.loan),
-                ),
-              ),
-            ],
+          _TypeButton(
+            selected: isCard,
+            icon: Icons.credit_card_rounded,
+            title: 'Tarjeta de crédito',
+            onTap: () => setState(() => type = DebtType.creditCard),
+          ),
+          const SizedBox(height: 8),
+          _TypeButton(
+            selected: !isCard,
+            icon: Icons.account_balance_rounded,
+            title: 'Préstamo / Crédito',
+            onTap: () => setState(() => type = DebtType.loan),
+          ),
+          const SizedBox(height: 16),
+
+          Text(
+            'Nombre de la deuda',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: nameCtrl,
+            decoration: const InputDecoration(hintText: 'Ej: Tarjeta Banco X'),
           ),
 
           const SizedBox(height: 16),
+          MoneyInput(label: 'Cuota mensual', controller: feeCtrl),
+          const SizedBox(height: 12),
+          MoneyInput(label: 'Deuda total actual', controller: totalCtrl),
+          if (isCard) ...[
+            const SizedBox(height: 12),
+            MoneyInput(label: 'Línea de crédito total', controller: limitCtrl),
+          ],
 
-          // ===== Card con campos =====
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: AppColors.border),
-              borderRadius: BorderRadius.circular(16),
+          const SizedBox(height: 16),
+          Text(
+            'Día de vencimiento (del mes)',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: dueDayCtrl,
+            keyboardType: const TextInputType.numberWithOptions(
+              signed: false,
+              decimal: false,
             ),
-            child: Column(
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre (Banco/Tarjeta/Préstamo)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                MoneyInput(label: 'Cuota mensual', controller: feeCtrl),
-                const SizedBox(height: 12),
-
-                // Día de vencimiento (1..31)
-                TextField(
-                  controller: dueDayCtrl,
-                  keyboardType: TextInputType.numberWithOptions(
-                    signed: false,
-                    decimal: false,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly, // solo números
-                    LengthLimitingTextInputFormatter(2), // máx 2 dígitos
-                    DayOfMonthFormatter(), // fuerza 1–31
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Día de vencimiento',
-                    hintText: 'Del 1 al 31',
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Día del mes en que vence el pago (1-31)',
-                  style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
-                ),
-
-                const SizedBox(height: 12),
-
-                MoneyInput(
-                  label: isCard ? 'Saldo actual' : 'Saldo total del préstamo',
-                  controller: totalCtrl,
-                ),
-
-                const SizedBox(height: 12),
-
-                if (isCard)
-                  MoneyInput(
-                    label: 'Línea de crédito (opcional)',
-                    controller: limitCtrl,
-                  ),
-              ],
-            ),
+            inputFormatters: [
+              //borre un const
+              FilteringTextInputFormatter.digitsOnly, // solo números
+              LengthLimitingTextInputFormatter(2), // máx 2 dígitos
+              DayOfMonthFormatter(), // fuerza 1–31
+            ],
+            decoration: const InputDecoration(hintText: 'Del 1 al 31'),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Día del mes en que vence el pago (1-31)',
+            style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
           ),
 
           const SizedBox(height: 16),
@@ -155,42 +128,43 @@ class _AddDebtPageState extends State<AddDebtPage> {
         ],
       ),
 
-      // ===== Botón Guardar (estilo original) =====
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: ElevatedButton(
             onPressed: () async {
               final name = nameCtrl.text.trim();
-              final fee = parseMoney(feeCtrl.text);
-              final total = parseMoney(totalCtrl.text);
-              final limit = (limitCtrl.text.trim().isEmpty)
-                  ? null
-                  : parseMoney(limitCtrl.text);
+              final fee = parseCurrency(feeCtrl.text);
+              final total = parseCurrency(totalCtrl.text);
+              final limit = parseCurrency(limitCtrl.text);
+              final day = _dueDay;
 
               if (name.isEmpty ||
                   fee <= 0 ||
                   total <= 0 ||
-                  _dueDay < 1 ||
-                  _dueDay > 31) {
+                  day < 1 ||
+                  day > 31) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Revisa los campos y vuelve a intentar'),
+                    content: Text(
+                      'Revisa los campos: día 1–31 y montos válidos',
+                    ),
                   ),
                 );
                 return;
               }
 
-              final due = _nextDueDateFromDay(_dueDay);
+              final due = _nextDueDateFromDay(day);
 
+              // Nueva arquitectura: crear entidad y delegar al controller
               final debt = Debt(
                 id: UniqueKey().toString(),
                 title: name,
                 amount: fee,
+                totalDebt: total,
+                creditLimit: isCard && limit > 0 ? limit : null,
                 dueDate: due,
                 paid: false,
-                totalDebt: total,
-                creditLimit: limit,
               );
 
               await context.read<DebtsController>().addDebt(debt);
@@ -204,18 +178,17 @@ class _AddDebtPageState extends State<AddDebtPage> {
   }
 }
 
-// =================== Widgets de UI (fiel al diseño original) ===================
+// ======= helpers UI =======
 
 class _TypeButton extends StatelessWidget {
+  final bool selected;
   final IconData icon;
   final String title;
-  final bool selected;
   final VoidCallback onTap;
-
   const _TypeButton({
+    required this.selected,
     required this.icon,
     required this.title,
-    required this.selected,
     required this.onTap,
   });
 
@@ -224,13 +197,13 @@ class _TypeButton extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: Ink(
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
           border: Border.all(
             color: selected ? AppColors.primary : AppColors.border,
-            width: 2,
+            width: selected ? 1.5 : 1,
           ),
           borderRadius: BorderRadius.circular(14),
         ),
@@ -240,7 +213,9 @@ class _TypeButton extends StatelessWidget {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5FF),
+                color: selected
+                    ? AppColors.primary.withOpacity(.12)
+                    : AppColors.inputBg,
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -261,7 +236,6 @@ class _TypeButton extends StatelessWidget {
                 ),
               ),
             ),
-            // Indicador circular (marca de selección)
             Container(
               width: 18,
               height: 18,

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:app_finanzas/core/theme/app_theme.dart';
-import 'package:app_finanzas/core/utils/formatters.dart';
-import 'package:app_finanzas/presentation/widgets/money_input.dart';
-import 'package:app_finanzas/presentation/widgets/category_chip.dart';
-import 'package:app_finanzas/presentation/features/transactions/controller/transactions_controller.dart';
+import '../../../../core/utils/formatters.dart';
+import '../../../widgets/money_input.dart';
+import '../../../widgets/category_chip.dart';
+import '../controller/transactions_controller.dart';
 
 class AddExpensePage extends StatefulWidget {
   const AddExpensePage({super.key});
@@ -13,8 +12,10 @@ class AddExpensePage extends StatefulWidget {
   State<AddExpensePage> createState() => _AddExpensePageState();
 }
 
+// Modelo tipado para evitar casts
 class _Cat {
-  final String id, label;
+  final String id;
+  final String label;
   final IconData icon;
   const _Cat(this.id, this.label, this.icon);
 }
@@ -24,8 +25,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final amountCtrl = TextEditingController();
   final dateCtrl = TextEditingController(text: formatDate(DateTime.now()));
   final noteCtrl = TextEditingController();
+
+  bool amountError = false;
   DateTime selectedDate = DateTime.now();
 
+  // Lista tipada de categorías
   static const List<_Cat> _cats = [
     _Cat('comida', 'Comida', Icons.restaurant),
     _Cat('transporte', 'Transporte', Icons.directions_bus),
@@ -50,134 +54,118 @@ class _AddExpensePageState extends State<AddExpensePage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== Categorías (chips) =====
           Text('Categoría', style: Theme.of(context).textTheme.labelMedium),
           const SizedBox(height: 8),
+
+          // Chips de categoría
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _cats
-                .map(
-                  (c) => CategoryChip(
-                    label: c.label,
-                    icon: c.icon,
-                    selected: category == c.id,
-                    onTap: () => setState(() => category = c.id),
-                  ),
-                )
-                .toList(),
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final c in _cats)
+                CategoryChip(
+                  label: c.label,
+                  icon: c.icon,
+                  selected: category == c.id,
+                  onTap: () => setState(() => category = c.id),
+                ),
+            ],
           ),
 
           const SizedBox(height: 16),
 
-          // ===== Card de campos =====
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: AppColors.border),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                MoneyInput(label: 'Monto', controller: amountCtrl),
-                const SizedBox(height: 12),
-
-                // Selector de fecha con aspecto de input
-                InkWell(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: selectedDate,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2100),
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        selectedDate = picked;
-                        dateCtrl.text = formatDate(picked);
-                      });
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(12),
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Fecha',
-                      border: OutlineInputBorder(),
-                      filled: true,
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.event,
-                          size: 20,
-                          color: Color(0xFF64748B),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(dateCtrl.text),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-                TextField(
-                  controller: noteCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Nota (opcional)',
-                  ),
-                ),
-              ],
-            ),
+          // Monto con prefijo "S/"
+          MoneyInput(
+            label: 'Monto',
+            controller: amountCtrl,
+            errorText: amountError ? 'Ingresa un monto válido' : null,
           ),
 
-          const SizedBox(height: 100), // margen para que no tape el botón
-        ],
-      ),
+          const SizedBox(height: 12),
 
-      // ===== Botón Guardar (fijo) =====
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: SizedBox(
-            height: 56,
+          Text('Fecha', style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 8),
+          TextField(
+            controller: dateCtrl,
+            readOnly: true,
+            decoration: const InputDecoration(
+              hintText: 'dd/mm/aaaa',
+              suffixIcon: Icon(Icons.calendar_today_rounded, size: 18),
+            ),
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: selectedDate,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+              );
+              if (picked != null) {
+                setState(() {
+                  selectedDate = picked;
+                  dateCtrl.text = formatDate(picked); // resistente a locales
+                });
+              }
+            },
+          ),
+
+          const SizedBox(height: 12),
+
+          Text(
+            'Nota (opcional)',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: noteCtrl,
+            decoration: const InputDecoration(
+              hintText: 'Escribe un detalle si lo necesitas',
+            ),
+            maxLines: 2,
+          ),
+
+          const SizedBox(height: 20),
+
+          SizedBox(
+            height: 48,
             child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              onPressed: () async {
-                final amt = parseMoney(amountCtrl.text);
-                if (amt <= 0 || category == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Completa categoría y monto válido'),
-                    ),
+              onPressed: () {
+                try {
+                  if (category == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Selecciona una categoría')),
+                    );
+                    return;
+                  }
+
+                  final amount = parseCurrency(amountCtrl.text);
+                  if (amount <= 0.0) {
+                    setState(() => amountError = true);
+                    return;
+                  } else {
+                    if (amountError) setState(() => amountError = false);
+                  }
+
+                  final date = selectedDate; // sincronizado con dateCtrl
+
+                  context.read<TransactionsController>().addExpense(
+                    category: category!,
+                    amount: amount,
+                    date: date,
+                    note: noteCtrl.text.isEmpty ? null : noteCtrl.text,
                   );
-                  return;
+
+                  Navigator.pop(context);
+                } catch (e) {
+                  // No permitir que la app se caiga en emulador/dispositivo
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('No se pudo guardar: $e')),
+                  );
                 }
-                await context.read<TransactionsController>().addExpense(
-                  category: category!,
-                  amount: amt,
-                  date: selectedDate,
-                  note: noteCtrl.text.trim().isEmpty
-                      ? null
-                      : noteCtrl.text.trim(),
-                );
-                if (context.mounted) Navigator.pop(context);
               },
               child: const Text('Guardar'),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

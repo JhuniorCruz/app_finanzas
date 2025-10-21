@@ -3,13 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
-import '../../../../presentation/widgets/money_input.dart';
-import '../../transactions/controller/transactions_controller.dart';
+import '../../../widgets/money_input.dart';
+import '../controller/transactions_controller.dart';
 
 enum IncomeKind { recibo, planilla }
 
 class AddIncomePage extends StatefulWidget {
   const AddIncomePage({super.key});
+
   @override
   State<AddIncomePage> createState() => _AddIncomePageState();
 }
@@ -20,9 +21,19 @@ class _AddIncomePageState extends State<AddIncomePage> {
   final grossCtrl = TextEditingController(); // bruto
   final discCtrl = TextEditingController(); // retenciones/aportes
 
-  double get gross => parseMoney(grossCtrl.text);
-  double get disc => parseMoney(discCtrl.text);
-  double get net => (gross - disc).clamp(0, double.infinity);
+  double get gross => parseCurrency(grossCtrl.text);
+  double get disc => parseCurrency(discCtrl.text);
+  double get net =>
+      ((gross - disc).clamp(0.0, double.infinity) as num).toDouble();
+
+  @override
+  void initState() {
+    super.initState();
+    grossCtrl.addListener(_recalc);
+    discCtrl.addListener(_recalc);
+  }
+
+  void _recalc() => setState(() {});
 
   @override
   void dispose() {
@@ -40,80 +51,71 @@ class _AddIncomePageState extends State<AddIncomePage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== Selector tipo de ingreso (pastillas) =====
+          // Selector tipo de ingreso
           _SegmentedKind(
             value: kind,
-            onChanged: (k) => setState(() => kind = k),
+            onChanged: (k) {
+              setState(() {
+                kind = k;
+                // opcional: limpiar descuentos al cambiar
+                // discCtrl.text = '';
+              });
+            },
           ),
+          const SizedBox(height: 18),
+
+          // Monto bruto
+          MoneyInput(label: 'Monto bruto', controller: grossCtrl),
 
           const SizedBox(height: 16),
 
-          // ===== Card con campos =====
+          // Retenciones / Aportes
+          MoneyInput(
+            label: isRecibo
+                ? 'Retenciones (impuestos)'
+                : 'Aportes (AFP/ONP, salud, etc.)',
+            controller: discCtrl,
+          ),
+
+          const SizedBox(height: 18),
+
+          // Neto estimado
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: AppColors.border),
+              color: const Color(0xFFF2F4FF),
+              border: Border.all(color: const Color(0xFFCDD4FF)),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Ingreso bruto
-                MoneyInput(label: 'Ingreso bruto', controller: grossCtrl),
-                const SizedBox(height: 12),
-
-                // Retenciones / Aportes
-                MoneyInput(
-                  label: isRecibo
-                      ? 'Retenciones (impuestos)'
-                      : 'Aportes (AFP/ONP, salud, etc.)',
-                  controller: discCtrl,
-                ),
-
-                const SizedBox(height: 18),
-
-                // Neto estimado (card azul suave)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF2F4FF),
-                    border: Border.all(color: const Color(0xFFCDD4FF)),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Neto estimado',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(color: const Color(0xFF475569)),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        formatCurrency(net),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.foreground,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
                 Text(
-                  isRecibo
-                      ? 'El monto neto se calcula restando las retenciones al bruto'
-                      : 'El monto neto se calcula restando los aportes obligatorios al bruto',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.foreground.withOpacity(.7),
+                  'Neto estimado',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: const Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  formatCurrency(net),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.foreground,
                   ),
                 ),
               ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          Text(
+            isRecibo
+                ? 'El monto neto se calcula restando las retenciones al bruto'
+                : 'El monto neto se calcula restando los aportes obligatorios al bruto',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppColors.foreground.withOpacity(.7),
             ),
           ),
 
@@ -121,7 +123,7 @@ class _AddIncomePageState extends State<AddIncomePage> {
         ],
       ),
 
-      // ===== Botón fijo inferior (estilo original) =====
+      // Botón fijo inferior
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -140,14 +142,14 @@ class _AddIncomePageState extends State<AddIncomePage> {
                 ),
               ),
               onPressed: gross > 0
-                  ? () async {
-                      await context.read<TransactionsController>().addIncome(
+                  ? () {
+                      context.read<TransactionsController>().addIncome(
                         category: isRecibo ? 'recibo' : 'planilla',
                         gross: gross,
                         netAmount: net,
                         date: DateTime.now(),
                       );
-                      if (context.mounted) Navigator.pop(context);
+                      Navigator.pop(context);
                     }
                   : null,
               child: const Text('Guardar'),

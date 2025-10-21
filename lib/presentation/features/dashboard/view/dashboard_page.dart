@@ -1,18 +1,22 @@
 import 'dart:math' as math;
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:fl_chart/fl_chart.dart';
 
-import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/utils/scoring.dart';
-import '../../dashboard/controller/dashboard_controller.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../widgets/kpi_card.dart' as k;
+
+import '../../score/view/score_detail_page.dart';
+import '../../debts/controller/debts_controller.dart';
+import '../../transactions/controller/transactions_controller.dart';
 import '../../score/controller/score_controller.dart';
-import '../../transactions/view/add_income_page.dart';
-import '../../transactions/view/add_expense_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
   @override
   State<DashboardPage> createState() => _DashboardPageState();
 }
@@ -20,270 +24,276 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   bool _loaded = false;
 
+  // Porcentajes seguros (sin NaN/Infinity) y acotados
+  double _pct(double num, double den) {
+    if (den <= 0) return 0;
+    final v = (num / den) * 100.0;
+    if (v.isNaN || v.isInfinite) return 0;
+    return v.clamp(0, 999).toDouble();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_loaded) {
-      _loaded = true;
-      Future.microtask(() async {
-        await context.read<DashboardController>().load();
-        // Score para indicadores (no bloquea UI)
+    if (_loaded) return;
+    _loaded = true;
+    // Cargamos datos mínimos para que el dashboard calcule
+    Future.microtask(() async {
+      if (mounted) {
+        context.read<TransactionsController>().load();
+        context.read<DebtsController>().load();
         context.read<ScoreController>().load();
-      });
-    }
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.watch<DashboardController>();
-    if (vm.loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    final txVm = context.watch<TransactionsController>();
+    final debtVm = context.watch<DebtsController>();
+    final scoreVm = context.watch<ScoreController>();
 
-    final tx = vm.items;
     final now = DateTime.now();
-    final monthTx = tx
-        .where((t) => t.date.year == now.year && t.date.month == now.month)
+    final txs = txVm.items;
+
+    final monthTx = txs
+        .where((t) => t.date.month == now.month && t.date.year == now.year)
         .toList();
 
-    final totalIncome = monthTx
-        .where((t) => t.amount >= 0)
+    final double totalIncome = monthTx
+        .where((t) => t.type == 'income')
         .fold<double>(0.0, (s, t) => s + t.amount);
-    final totalExpenses = monthTx
-        .where((t) => t.amount < 0)
-        .fold<double>(0.0, (s, t) => s + t.amount.abs());
-    final available = totalIncome - totalExpenses;
 
-    // Gastos por categoría
+    final double totalExpenses = monthTx
+        .where((t) => t.type == 'expense')
+        .fold<double>(0.0, (s, t) => s + t.amount);
+
+    final double available = totalIncome - totalExpenses;
+
+    // ---- Gastos por categoría (ordenado desc) ----
     final Map<String, double> expensesByCat = {};
-    for (final t in monthTx.where((t) => t.amount < 0)) {
-      expensesByCat[t.category] =
-          (expensesByCat[t.category] ?? 0) + t.amount.abs();
+    for (final t in monthTx.where((t) => t.type == 'expense')) {
+      expensesByCat[t.category] = (expensesByCat[t.category] ?? 0.0) + t.amount;
     }
-    final sortedKeys = expensesByCat.keys.toList()
-      ..sort(
-        (a, b) => (expensesByCat[b] ?? 0).compareTo(expensesByCat[a] ?? 0),
-      );
-    final barGroups = List.generate(sortedKeys.length, (i) {
-      final k = sortedKeys[i];
-      return BarChartGroupData(
-        x: i,
-        barRods: [BarChartRodData(toY: expensesByCat[k] ?? 0, width: 14)],
-      );
-    });
 
-    // Indicadores (del ScoreController)
-    final scoreVm = context.watch<ScoreController>();
-    final sf = scoreVm.factors;
-    final result = scoreVm.result;
+    // ---- Métricas y score educativo ----
+    final debts = debtVm.items;
+    final dpdList = debts
+        .where((d) => !d.paid)
+        .map((d) => getDaysPastDue(d.dueDate))
+        .toList();
+    final int dpdAvg = dpdList.isEmpty
+        ? 0
+        : (dpdList.reduce((a, b) => a + b) / dpdList.length).round();
 
-    final savingsRate =
-        sf?.savingsRate ??
-        _safePct(totalIncome == 0 ? 0 : (available / totalIncome * 100));
-    final dti = sf?.debtToIncome ?? 0.0;
-    final utilization = sf?.utilization ?? 0.0;
-    final eduScore =
-        result?.score ?? _educationalScoreFallback(totalIncome, totalExpenses);
+    final double debtInstallments = debts
+        .where((d) => !d.paid)
+        .fold<double>(0.0, (s, d) => s + d.amount);
+
+    final double debtToIncome = _pct(debtInstallments, totalIncome);
+
+    double utilization = 0.0;
+    final withLimit = debts
+        .where((d) => d.creditLimit != null && d.creditLimit! > 0)
+        .toList();
+    if (withLimit.isNotEmpty) {
+      final double used = withLimit.fold<double>(
+        0.0,
+        (s, d) => s + d.totalDebt,
+      );
+      final double limit = withLimit.fold<double>(
+        0.0,
+        (s, d) => s + (d.creditLimit ?? 0.0),
+      );
+      utilization = _pct(used, limit);
+    }
+
+    final double savingsRate = _pct(totalIncome - totalExpenses, totalIncome);
+
+    final thresholds = scoreVm.thresholds ?? defaultThresholds;
+
+    final score = calculateScore(
+      ScoreFactors(
+        dpd: dpdAvg,
+        debtToIncome: debtToIncome,
+        utilization: utilization,
+        savingsRate: savingsRate,
+      ),
+      thresholds,
+    );
+
+    final kpiStatus = {
+      'good': k.KpiStatus.good,
+      'warning': k.KpiStatus.warning,
+      'danger': k.KpiStatus.danger,
+    }[score.status]!;
 
     return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text('Inicio', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 12),
+      appBar: AppBar(title: const Text('Inicio')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ===== Header “Mi Control” =====
+          _BalanceHeaderCard(
+            available: available,
+            income: totalIncome,
+            expenses: totalExpenses,
+          ),
+          const SizedBox(height: 16),
 
-            _HeroCard(
-              available: available,
-              incomes: totalIncome,
-              expenses: totalExpenses,
-            ),
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Agregar ingreso'),
-                    style: ElevatedButton.styleFrom(
+          // ===== Acciones rápidas =====
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 56,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
                       backgroundColor: AppColors.accent,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddIncomePage()),
-                    ),
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/addIncome'),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Agregar ingreso'),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 56,
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Agregar gasto'),
                     style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.foreground,
                       side: const BorderSide(
                         color: AppColors.border,
                         width: 1.5,
                       ),
-                      minimumSize: const Size.fromHeight(48),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
+                      backgroundColor: Colors.white,
                     ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AddExpensePage()),
-                    ),
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/addExpense'),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Agregar gasto'),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
 
-            _NoticeCard(
-              text:
-                  'El puntaje educativo es una guía, no reemplaza scores oficiales',
-            ),
-            const SizedBox(height: 16),
+          const _InfoBanner(
+            text:
+                'El puntaje educativo es una guía, no reemplaza scores oficiales',
+          ),
+          const SizedBox(height: 12),
 
+          // ===== Indicadores financieros =====
+          Text(
+            'Indicadores financieros',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          GridView.count(
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.6,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              k.KpiCard(
+                title: '% Ahorro',
+                value: '${savingsRate.toStringAsFixed(1)}%',
+                status: savingsRate >= thresholds.savingsTarget
+                    ? k.KpiStatus.good
+                    : k.KpiStatus.warning,
+                icon: Icons.savings_rounded,
+              ),
+              k.KpiCard(
+                title: 'Deuda/Ingreso',
+                value: '${debtToIncome.toStringAsFixed(0)}%',
+                status: debtToIncome <= thresholds.debtToIncomeWarning
+                    ? k.KpiStatus.good
+                    : k.KpiStatus.warning,
+                icon: Icons.trending_down_rounded,
+              ),
+              k.KpiCard(
+                title: 'Utilización',
+                value: '${utilization.toStringAsFixed(0)}%',
+                status: utilization <= thresholds.utilizationWarning
+                    ? k.KpiStatus.good
+                    : k.KpiStatus.danger,
+                icon: Icons.credit_card_rounded,
+              ),
+              k.KpiCard(
+                title: 'Puntaje Educativo',
+                value: score.score.toString(),
+                status: kpiStatus,
+                icon: Icons.insights_rounded,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ScoreDetailPage()),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ===== Gráfico: Gastos por categoría =====
+          if (expensesByCat.isNotEmpty) ...[
             Text(
-              'Indicadores financieros',
+              'Gastos por categoría',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 10),
-
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                SizedBox(
-                  width: _kpiWidth(context),
-                  child: _IndicatorCard(
-                    title: '% Ahorro',
-                    value: '${savingsRate.toStringAsFixed(1)}%',
-                    bgFrom: const Color(0xFFEFFDF5),
-                    bgTo: const Color(0xE6D1F7E8),
-                    icon: Icons.savings_rounded,
-                    iconBg: const Color(0xFFE8FFF3),
-                    valueColor: const Color(0xFF16A34A),
-                  ),
-                ),
-                SizedBox(
-                  width: _kpiWidth(context),
-                  child: _IndicatorCard(
-                    title: 'Deuda/Ingreso',
-                    value: '${dti.toStringAsFixed(0)}%',
-                    bgFrom: const Color(0xFFF0FFF9),
-                    bgTo: const Color(0xE6CFFFEA),
-                    icon: Icons.trending_down_rounded,
-                    iconBg: const Color(0xFFEAFEF6),
-                    valueColor: const Color(0xFF047857),
-                  ),
-                ),
-                SizedBox(
-                  width: _kpiWidth(context),
-                  child: _IndicatorCard(
-                    title: 'Utilización',
-                    value: '${utilization.toStringAsFixed(0)}%',
-                    bgFrom: const Color(0xFFFFF1F2),
-                    bgTo: const Color(0xE6FFD1D5),
-                    icon: Icons.credit_card_rounded,
-                    iconBg: const Color(0xFFFFEEF0),
-                    valueColor: const Color(0xFFB91C1C),
-                  ),
-                ),
-                SizedBox(
-                  width: _kpiWidth(context),
-                  child: _IndicatorCard(
-                    title: 'Puntaje Educativo',
-                    value: '$eduScore',
-                    bgFrom: const Color(0xFFFFF7E8),
-                    bgTo: const Color(0xE6FFE7B5),
-                    icon: Icons.query_stats_rounded,
-                    iconBg: const Color(0xFFFFF1DE),
-                    valueColor: const Color(0xFFB45309),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            if (barGroups.isNotEmpty) ...[
-              Text(
-                'Gastos por categoría',
-                style: Theme.of(context).textTheme.titleMedium,
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 16, 16),
+                child: _ExpenseBarChart(data: expensesByCat),
               ),
-              const SizedBox(height: 8),
-              _BarCard(keysLabels: sortedKeys, groups: barGroups),
-            ],
-
-            const SizedBox(height: 24),
+            ),
           ],
-        ),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
-
-  double _kpiWidth(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    const padding = 16.0;
-    const gap = 12.0;
-    return (w - padding * 2 - gap) / 2;
-  }
-
-  int _educationalScoreFallback(double totalIncome, double totalExpenses) {
-    final v = clampScore(
-      100 -
-          math.min(
-            totalExpenses / (totalIncome == 0 ? 1 : totalIncome) * 100,
-            100,
-          ),
-    );
-    return v.round();
-  }
-
-  double _safePct(num v) {
-    final d = v.toDouble();
-    if (d.isNaN || d.isInfinite) return 0.0;
-    return d.clamp(0.0, 999.0);
-  }
 }
 
-// ======== Widgets UI ========
+// ================== Widgets auxiliares (idénticos) ==================
 
-class _HeroCard extends StatelessWidget {
-  final double available;
-  final double incomes;
-  final double expenses;
-  const _HeroCard({
+class _BalanceHeaderCard extends StatelessWidget {
+  final double available, income, expenses;
+  const _BalanceHeaderCard({
     required this.available,
-    required this.incomes,
+    required this.income,
     required this.expenses,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF7C3AED), Color(0xFF6366F1)],
+        gradient: LinearGradient(
+          colors: [const Color(0xFF7C6BF6), AppColors.primary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: const [
           BoxShadow(
+            blurRadius: 20,
+            offset: Offset(0, 10),
             color: Color(0x22000000),
-            blurRadius: 12,
-            offset: Offset(0, 6),
           ),
         ],
       ),
@@ -291,32 +301,39 @@ class _HeroCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: [
-              const Icon(Icons.auto_graph_rounded, color: Colors.white),
-              const SizedBox(width: 8),
+            children: const [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: Colors.white24,
+                child: Icon(
+                  Icons.auto_graph_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+              SizedBox(width: 8),
               Text(
                 'Mi Control',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(color: Colors.white),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
+          const SizedBox(height: 12),
+          const Text(
             'Saldo disponible este mes',
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: const Color(0xFFE0E7FF)),
+            style: TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
             child: Text(
               formatCurrency(available),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              style: const TextStyle(
                 color: Colors.white,
+                fontSize: 28,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -325,18 +342,18 @@ class _HeroCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _HeroStat(
+                child: _StatPill(
+                  icon: Icons.south_west_rounded,
                   label: 'Ingresos',
-                  value: formatCurrency(incomes),
-                  icon: Icons.north_east_rounded,
+                  value: formatCurrency(income),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _HeroStat(
+                child: _StatPill(
+                  icon: Icons.north_east_rounded,
                   label: 'Gastos',
                   value: formatCurrency(expenses),
-                  icon: Icons.north_west_rounded,
                 ),
               ),
             ],
@@ -347,138 +364,55 @@ class _HeroCard extends StatelessWidget {
   }
 }
 
-class _HeroStat extends StatelessWidget {
-  final String label;
-  final String value;
+class _StatPill extends StatelessWidget {
   final IconData icon;
-  const _HeroStat({
+  final String label, value;
+  const _StatPill({
+    required this.icon,
     required this.label,
     required this.value,
-    required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 64,
+      decoration: BoxDecoration(
+        color: Colors.white12,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white24, width: 1.5),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.15),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(color: Color(0xFFE0E7FF))),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NoticeCard extends StatelessWidget {
-  final String text;
-  const _NoticeCard({required this.text});
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFFFE0B3), width: 1.5),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.info_outline, color: Color(0xFFB45309)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(text, style: const TextStyle(color: Color(0xFF92400E))),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _IndicatorCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final Color bgFrom;
-  final Color bgTo;
-  final IconData icon;
-  final Color iconBg;
-  final Color valueColor;
-
-  const _IndicatorCard({
-    required this.title,
-    required this.value,
-    required this.bgFrom,
-    required this.bgTo,
-    required this.icon,
-    required this.iconBg,
-    required this.valueColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 92),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [bgFrom, bgTo],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border, width: 2),
-      ),
       child: Row(
         children: [
           Container(
             width: 36,
             height: 36,
-            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-            child: Icon(icon, color: const Color(0xFF475569)),
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: Colors.white),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: const Color(0xFF475569),
-                  ),
+                const Text(
+                  'Ingresos',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
-                const SizedBox(height: 4),
                 FittedBox(
-                  alignment: Alignment.centerLeft,
                   fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
                   child: Text(
                     value,
                     maxLines: 1,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: valueColor,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -491,54 +425,159 @@ class _IndicatorCard extends StatelessWidget {
   }
 }
 
-class _BarCard extends StatelessWidget {
-  final List<String> keysLabels;
-  final List<BarChartGroupData> groups;
-  const _BarCard({required this.keysLabels, required this.groups});
-
+class _InfoBanner extends StatelessWidget {
+  final String text;
+  const _InfoBanner({required this.text});
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 260,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: AppColors.border, width: 2),
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFFFFF7E8),
+        border: Border.all(color: const Color(0xFFFFE3A3)),
+        borderRadius: BorderRadius.circular(12),
       ),
+      child: Row(
+        children: [
+          const Icon(Icons.lightbulb, color: Color(0xFFB45309), size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: Color(0xFFB45309)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Gráfico de barras para "Gastos por categoría" con ejes legibles
+class _ExpenseBarChart extends StatelessWidget {
+  final Map<String, double> data;
+  const _ExpenseBarChart({required this.data});
+
+  double _niceInterval(double yMax) {
+    if (yMax <= 50) return 10;
+    if (yMax <= 200) return 50;
+    if (yMax <= 600) return 100;
+    if (yMax <= 1200) return 200;
+    if (yMax <= 3000) return 500;
+    if (yMax <= 6000) return 1000;
+    return 2000;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Ordenamos por monto (absoluto) desc
+    final keys = data.keys.toList()
+      ..sort((a, b) => (data[b] ?? 0).abs().compareTo((data[a] ?? 0).abs()));
+
+    // Usamos valores absolutos para todo el cálculo
+    final valuesAbs = keys.map((k) => (data[k] ?? 0).abs()).toList();
+
+    final maxVal = valuesAbs.isEmpty ? 0.0 : valuesAbs.reduce(math.max);
+    // Calcula el paso con el máximo real y agrega un escalón extra arriba
+    final step = _niceInterval(maxVal);
+    final maxY = maxVal == 0
+        ? step * 5
+        : ((maxVal / step).ceil() + 1) * step; // +1 step = margen superior
+
+    const palette = [
+      Color(0xFF22C55E),
+      Color(0xFFF59E0B),
+      Color(0xFFEF4444),
+      Color(0xFF8B5CF6),
+      Color(0xFF3B82F6),
+      Color(0xFF14B8A6),
+    ];
+
+    bool _isMultiple(double v, double base) {
+      const eps = 1e-6;
+      final r = v % base;
+      return r.abs() < eps || (base - r).abs() < eps;
+    }
+
+    return SizedBox(
+      height: 300,
       child: BarChart(
         BarChartData(
-          gridData: FlGridData(show: false),
+          minY: 0,
+          maxY: maxY,
+          alignment: BarChartAlignment.spaceAround,
+          groupsSpace: 12,
           borderData: FlBorderData(show: false),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: step,
+            getDrawingHorizontalLine: (_) =>
+                const FlLine(color: Color(0xFFE2E8F0), strokeWidth: 1),
+          ),
           titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(showTitles: true, reservedSize: 36),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
             ),
             rightTitles: const AxisTitles(
               sideTitles: SideTitles(showTitles: false),
             ),
-            topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            bottomTitles: AxisTitles(
+            leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                getTitlesWidget: (v, meta) {
-                  final i = v.toInt();
-                  if (i < 0 || i >= keysLabels.length)
+                reservedSize: 38,
+                interval: step,
+                getTitlesWidget: (value, _) {
+                  // Solo mostramos múltiplos del intervalo…
+                  bool isMultiple(double v, double base) {
+                    const eps = 1e-6;
+                    final r = v % base;
+                    return r.abs() < eps || (base - r).abs() < eps;
+                  }
+
+                  if (!isMultiple(value, step)) return const SizedBox.shrink();
+
+                  // …y ocultamos la etiqueta del valor máximo para no pegarla al borde superior
+                  const epsTop = 1e-3;
+                  if ((maxY - value).abs() < epsTop)
                     return const SizedBox.shrink();
+
+                  return Text(
+                    value.toInt().toString(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF64748B),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            bottomTitles: AxisTitles(
+              axisNameWidget: const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Categoría de gasto',
+                  style: TextStyle(color: Color(0xFF64748B)),
+                ),
+              ),
+              axisNameSize: 35,
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 56,
+                getTitlesWidget: (value, _) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= keys.length) return const SizedBox.shrink();
                   return Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Transform.rotate(
                       angle: -0.6,
                       child: Text(
-                        keysLabels[i],
+                        keys[i],
                         style: const TextStyle(
                           fontSize: 11,
                           color: Color(0xFF475569),
                         ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
                       ),
                     ),
                   );
@@ -546,8 +585,41 @@ class _BarCard extends StatelessWidget {
               ),
             ),
           ),
-          barGroups: groups,
-          barTouchData: BarTouchData(enabled: true),
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (group, _, rod, __) {
+                final name = keys[group.x.toInt()];
+                return BarTooltipItem(
+                  '$name\n${formatCurrency(rod.toY)}',
+                  const TextStyle(fontWeight: FontWeight.w600),
+                );
+              },
+            ),
+          ),
+          barGroups: List.generate(keys.length, (i) {
+            final y = valuesAbs[i]; // <- valor positivo siempre
+            final color = palette[i % palette.length];
+            return BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  fromY: 0,
+                  toY: y,
+                  width: 22,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(6),
+                    topRight: Radius.circular(6),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [color.withOpacity(.45), color],
+                  ),
+                ),
+              ],
+            );
+          }),
         ),
       ),
     );

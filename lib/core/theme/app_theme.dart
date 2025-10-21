@@ -160,7 +160,3 @@ ThemeData buildAppTheme() {
     dividerColor: AppColors.border,
   );
 }
-
-class AppTheme {
-  static ThemeData get light => buildAppTheme();
-}

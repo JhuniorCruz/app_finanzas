@@ -1,26 +1,10 @@
-import 'dart:math' as math;
+// lib/core/utils/scoring.dart
 
-/// Días de atraso (DPD) entre una fecha de vencimiento y hoy.
-int getDaysPastDue(DateTime due) {
-  final now = DateTime.now();
-  final d1 = DateTime(due.year, due.month, due.day);
-  final d2 = DateTime(now.year, now.month, now.day);
-  return d2.difference(d1).inDays; // <= 0 si aún no vence
-}
-
-/// Asegura un porcentaje entre 0 y 100. Maneja NaN/Infinito.
-double clampScore(num v) {
-  final d = v.toDouble();
-  if (d.isNaN || d.isInfinite) return 0.0;
-  return d.clamp(0.0, 100.0);
-}
-
-/// Factores que alimentan el puntaje educativo.
 class ScoreFactors {
-  final int dpd; // días de atraso promedio (0..∞)
-  final double debtToIncome; // DTI %, 0..∞
-  final double utilization; // % uso de línea, 0..∞
-  final double savingsRate; // % ahorro del ingreso, 0..100+
+  final int dpd; // días de atraso promedio
+  final double debtToIncome; // %
+  final double utilization; // %
+  final double savingsRate; // %
   const ScoreFactors({
     required this.dpd,
     required this.debtToIncome,
@@ -29,11 +13,32 @@ class ScoreFactors {
   });
 }
 
-/// Umbrales de referencia (puedes ajustarlos desde Settings más adelante).
+class FactorInfo {
+  final double value;
+  final String status; // 'good' | 'warning' | 'danger'
+  final double weight;
+  const FactorInfo({
+    required this.value,
+    required this.status,
+    required this.weight,
+  });
+}
+
+class ScoreResult {
+  final int score; // 0-100
+  final String status; // 'good' | 'warning' | 'danger'
+  final Map<String, FactorInfo> factors;
+  const ScoreResult({
+    required this.score,
+    required this.status,
+    required this.factors,
+  });
+}
+
 class Thresholds {
-  final double debtToIncomeWarning; // p.ej. 30%
-  final double utilizationWarning; // p.ej. 50%
-  final double savingsTarget; // p.ej. 20%
+  final double debtToIncomeWarning;
+  final double utilizationWarning;
+  final double savingsTarget;
   const Thresholds({
     required this.debtToIncomeWarning,
     required this.utilizationWarning,
@@ -41,79 +46,138 @@ class Thresholds {
   });
 }
 
-/// Resultado del cálculo.
-class ScoreResult {
-  final int score; // 0..100
-  final String status; // 'good' | 'warning' | 'danger'
-  final Map<String, double> breakdown; // componentes 0..100
-  const ScoreResult({
-    required this.score,
-    required this.status,
-    required this.breakdown,
-  });
-}
+// Umbrales por defecto (para cuando no pasemos uno explícito)
+const defaultThresholds = Thresholds(
+  debtToIncomeWarning: 30,
+  utilizationWarning: 50,
+  savingsTarget: 20,
+);
 
-/// Calcula el score compuesto con pesos: DPD(35%), DTI(25%), Util(25%), Ahorro(15%).
 ScoreResult calculateScore(ScoreFactors f, Thresholds t) {
-  // Componente por DPD: cada día resta ~6 puntos hasta 0.
-  final compDpd = clampScore(100 - math.min(f.dpd * 6, 100));
+  // Ponderaciones
+  const weights = {
+    'dpd': 0.35,
+    'debtToIncome': 0.25,
+    'utilization': 0.25,
+    'savings': 0.15,
+  };
 
-  // DTI: si estás dentro del umbral => 100; por cada punto sobre umbral, resta *2.
-  final overDti = math.max(0.0, f.debtToIncome - t.debtToIncomeWarning);
-  final compDti = clampScore(100 - math.min(overDti * 2.0, 100));
+  final dpdScore = (100 - (f.dpd * 10)).clamp(0, 100).toDouble();
+  final dpdStatus = f.dpd == 0 ? 'good' : (f.dpd <= 5 ? 'warning' : 'danger');
 
-  // Utilización: similar al DTI, pero penaliza *1.5 por cada punto sobre umbral.
-  final overUtil = math.max(0.0, f.utilization - t.utilizationWarning);
-  final compUtil = clampScore(100 - math.min(overUtil * 1.5, 100));
+  final debtScore =
+      (100 -
+              ((f.debtToIncome - t.debtToIncomeWarning).clamp(
+                    0,
+                    double.infinity,
+                  ) *
+                  2))
+          .clamp(0, 100)
+          .toDouble();
+  final debtStatus = f.debtToIncome <= t.debtToIncomeWarning
+      ? 'good'
+      : (f.debtToIncome <= t.debtToIncomeWarning * 1.25 ? 'warning' : 'danger');
 
-  // Ahorro: si alcanzas la meta => 100; si no, proporcional.
-  final compSav = clampScore(
-    (f.savingsRate / (t.savingsTarget <= 0 ? 1 : t.savingsTarget)) * 100,
-  );
+  final utilScore =
+      (100 -
+              ((f.utilization - t.utilizationWarning).clamp(
+                    0,
+                    double.infinity,
+                  ) *
+                  2))
+          .clamp(0, 100)
+          .toDouble();
+  final utilStatus = f.utilization <= t.utilizationWarning
+      ? 'good'
+      : (f.utilization <= t.utilizationWarning * 1.2 ? 'warning' : 'danger');
 
-  // Pesos
-  const wDpd = 0.35, wDti = 0.25, wUtil = 0.25, wSav = 0.15;
+  final savScore = ((f.savingsRate / t.savingsTarget) * 100)
+      .clamp(0, 100)
+      .toDouble();
+  final savStatus = f.savingsRate >= t.savingsTarget
+      ? 'good'
+      : (f.savingsRate >= t.savingsTarget * 0.7 ? 'warning' : 'danger');
 
-  final composite =
-      compDpd * wDpd + compDti * wDti + compUtil * wUtil + compSav * wSav;
+  final total =
+      (dpdScore * weights['dpd']! +
+              debtScore * weights['debtToIncome']! +
+              utilScore * weights['utilization']! +
+              savScore * weights['savings']!)
+          .round();
 
-  final score = composite.round();
-  final status = score >= 80 ? 'good' : (score >= 60 ? 'warning' : 'danger');
+  final overall = total >= 80 ? 'good' : (total >= 60 ? 'warning' : 'danger');
 
   return ScoreResult(
-    score: score,
-    status: status,
-    breakdown: {
-      'dpd': compDpd,
-      'dti': compDti,
-      'utilization': compUtil,
-      'savings': compSav,
+    score: total,
+    status: overall,
+    factors: {
+      'dpd': FactorInfo(
+        value: f.dpd.toDouble(),
+        status: dpdStatus,
+        weight: weights['dpd']!,
+      ),
+      'debtToIncome': FactorInfo(
+        value: f.debtToIncome,
+        status: debtStatus,
+        weight: weights['debtToIncome']!,
+      ),
+      'utilization': FactorInfo(
+        value: f.utilization,
+        status: utilStatus,
+        weight: weights['utilization']!,
+      ),
+      'savings': FactorInfo(
+        value: f.savingsRate,
+        status: savStatus,
+        weight: weights['savings']!,
+      ),
     },
   );
 }
 
-/// Recomendaciones generales según el estado (puedes personalizar luego por factor).
-List<String> getRecommendations(ScoreResult r) {
-  switch (r.status) {
-    case 'good':
-      return [
-        'Mantén tus pagos a tiempo (DPD = 0).',
-        'Conserva la utilización de tarjetas por debajo del 50%.',
-        'Sostén tu tasa de ahorro mensual.',
-      ];
-    case 'warning':
-      return [
-        'Reduce gastos variables 10–15% para elevar tu tasa de ahorro.',
-        'Baja tu DTI refinanciando o acortando gastos fijos.',
-        'Evita nuevas compras con tarjeta hasta estar por debajo del umbral.',
-        'Prioriza pagar deudas con mayor interés y próximos vencimientos.',
-      ];
-    default: // 'danger'
-      return [
-        'Regulariza atrasos más antiguos primero para bajar el DPD.',
-        'Haz un plan de recorte de gastos del 20–30% por 2–3 meses.',
-        'Transfiere saldos a menor tasa o consolida deudas si es posible.',
-        'Suspende nuevas deudas hasta estabilizar el flujo mensual.',
-      ];
+List<String> generateRecommendations(ScoreResult r, Thresholds t) {
+  final out = <String>[];
+  if (r.factors['dpd']!.status != 'good') {
+    out.add(
+      'Tienes pagos atrasados. Prioriza regularizar tus deudas para evitar intereses.',
+    );
   }
+  if (r.factors['debtToIncome']!.status == 'danger') {
+    out.add(
+      'Tu deuda/ingreso supera ${t.debtToIncomeWarning}%. Reduce gastos o amplía plazos.',
+    );
+  } else if (r.factors['debtToIncome']!.status == 'warning') {
+    out.add(
+      'Tu nivel de deuda está cerca del límite recomendado. Evita nuevas deudas por ahora.',
+    );
+  }
+  if (r.factors['utilization']!.status == 'danger') {
+    out.add('Utilización alta. Intenta pagar más del mínimo este mes.');
+  } else if (r.factors['utilization']!.status == 'warning') {
+    out.add(
+      'Tu utilización de crédito está alta. Controla de cerca tus gastos con tarjeta.',
+    );
+  }
+  if (r.factors['savings']!.status == 'danger') {
+    out.add(
+      'Ahorro por debajo de tu meta. Activa una meta de ahorro automático.',
+    );
+  } else if (r.factors['savings']!.status == 'warning') {
+    out.add(
+      'Estás cerca de tu meta de ahorro. Intenta aumentar un 2% este mes.',
+    );
+  }
+  if (out.isEmpty) out.add('¡Excelente! Considera aumentar tu meta de ahorro.');
+  return out;
 }
+
+// ---- Shims de compatibilidad usados por las views que ya hicimos ----
+
+// Wrapper para el nombre que ya usamos en las vistas
+List<String> getRecommendations(ScoreResult r, [Thresholds? t]) {
+  final tt = t ?? defaultThresholds;
+  return generateRecommendations(r, tt);
+}
+
+// clampScore lo usamos como helper visual en Dashboard
+int clampScore(num v) => v.clamp(0, 100).round();

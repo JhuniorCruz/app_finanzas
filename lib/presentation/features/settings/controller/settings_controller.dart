@@ -1,34 +1,44 @@
 import 'package:flutter/foundation.dart';
-import '../../../../application/usecases/get_profile.dart';
-import '../../../../application/usecases/update_profile.dart';
 import '../../../../domain/entities/user_profile.dart';
 
+/// Recibe dos funciones:
+///  - _getProfile(): Future<UserProfile?>
+///  - _saveProfile(UserProfile): Future<void>
 class SettingsController extends ChangeNotifier {
-  final GetProfile _get;
-  final UpdateProfile _update;
+  final Future<UserProfile?> Function() _getProfile;
+  final Future<void> Function(UserProfile) _saveProfile;
 
-  SettingsController(this._get, this._update);
-
-  UserProfile? _profile;
-  UserProfile? get profile => _profile;
-
-  bool _loading = false;
-  bool get loading => _loading;
-
-  Future<void> load() async {
-    _loading = true;
-    notifyListeners();
-    _profile = await _get();
-    _loading = false;
-    notifyListeners();
+  SettingsController(this._getProfile, this._saveProfile) {
+    load();
   }
 
-  Future<void> save(UserProfile p) async {
-    _loading = true;
+  UserProfile? _profile;
+  bool _busy = false;
+
+  UserProfile? get profile => _profile;
+  bool get busy => _busy;
+
+  Future<void> load() async {
+    _busy = true;
     notifyListeners();
-    await _update(p);
-    _profile = p;
-    _loading = false;
+    try {
+      _profile = await _getProfile();
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  /// <-- Este es el método que reclama tu SettingsPage
+  Future<void> updateProfile(UserProfile newProfile) async {
+    _busy = true;
     notifyListeners();
+    try {
+      await _saveProfile(newProfile); // persiste usando la función inyectada
+      _profile = newProfile; // actualiza el estado en memoria
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
   }
 }
