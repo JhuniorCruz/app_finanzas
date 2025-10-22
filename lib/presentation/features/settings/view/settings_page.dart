@@ -1,3 +1,4 @@
+import 'package:app_finanzas/presentation/features/auth/controller/auth_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -136,6 +137,48 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
 
           const SizedBox(height: 24),
+
+          const _SectionTitle('Cuenta'),
+          _Card(
+            child: SizedBox(
+              height: 48,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('Cerrar sesión'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.destructive,
+                  side: const BorderSide(color: AppColors.destructive),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Cerrar sesión'),
+                      content: const Text(
+                        '¿Seguro que quieres cerrar tu sesión?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Cerrar'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (ok != true) return;
+                  await context.read<AuthController>().logout();
+                  // No hace falta navegar manualmente: AppRouter detecta isLoggedIn=false
+                },
+              ),
+            ),
+          ),
 
           // ---------- Acerca de ----------
           const _SectionTitle('Acerca de'),

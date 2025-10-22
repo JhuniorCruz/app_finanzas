@@ -81,8 +81,23 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    try {
+      isLoading = true;
+      notifyListeners();
+      await repo.logout();
+      isLoggedIn = false; // <- clave: dispara AppRouter → AuthFlow
+      error = null;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /*
+  Future<void> logout() async {
     await repo.logout();
     isLoggedIn = false;
     notifyListeners();
   }
+  */
 }
