@@ -16,8 +16,18 @@ class AuthRepositoryImpl implements AuthRepository {
   }) async {
     // Aquí iría tu llamada a API. De momento, simulamos éxito.
     await Future.delayed(const Duration(milliseconds: 300));
-    await prefs.setString(_kToken, 'demo-token');
-    await prefs.setBool(_kRemember, remember);
+
+    if (remember) {
+      await prefs.setBool(_kRemember, true);
+      await prefs.setString(
+        _kToken,
+        'local_${DateTime.now().millisecondsSinceEpoch}', // token ficticio
+      );
+    } else {
+      // Sesión NO persistida: no guardes token (ni remember)
+      await prefs.setBool(_kRemember, false);
+      await prefs.remove(_kToken);
+    }
   }
 
   @override
@@ -38,12 +48,23 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<void> logout() async {
+    await prefs.setBool(_kRemember, false);
     await prefs.remove(_kToken);
-    await prefs.remove(_kRemember);
   }
 
   @override
-  Future<bool> isLoggedIn() async {
-    return prefs.getString(_kToken) != null;
+  Future<bool> hasPersistedSession() async {
+    final remembered = prefs.getBool(_kRemember) ?? false;
+    final token = prefs.getString(_kToken);
+    return remembered && token != null && token.isNotEmpty;
   }
+
+  @override
+  Future<bool> getRememberFlag() async {
+    return prefs.getBool(_kRemember) ?? false;
+  }
+
+  // Alias para compatibilidad con tu interface actual
+  @override
+  Future<bool> isLoggedIn() => hasPersistedSession();
 }

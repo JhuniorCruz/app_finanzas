@@ -1,24 +1,28 @@
-// lib/presentation/features/auth/controller/auth_controller.dart
 import 'package:flutter/material.dart';
 import 'package:app_finanzas/domain/repositories/auth_repository.dart';
 
 class AuthController extends ChangeNotifier {
   final AuthRepository repo;
+
   bool isLoading = false;
-  bool isLoggedIn = false;
+  bool isLoggedIn = false; // estado en runtime
   String? error;
 
   AuthController(this.repo);
 
-  /// Útil si tu router usa este nombre
   bool get isAuthenticated => isLoggedIn;
 
-  /// Restaura sesión al iniciar la app (prefs / token / etc.)
+  /// Se llama al iniciar la app (desde DI: ..checkSession())
+  /// Revisa SOLO la sesión PERSISTIDA (remember + token).
   Future<void> checkSession() async {
     try {
       isLoading = true;
       notifyListeners();
-      isLoggedIn = await repo.isLoggedIn();
+      isLoggedIn = await repo.hasPersistedSession();
+      error = null;
+    } catch (e) {
+      error = e.toString();
+      isLoggedIn = false;
     } finally {
       isLoading = false;
       notifyListeners();
@@ -34,7 +38,10 @@ class AuthController extends ChangeNotifier {
       isLoading = true;
       error = null;
       notifyListeners();
+
       await repo.login(email: email, password: password, remember: remember);
+
+      // Logueado para ESTA ejecución (persistido solo si remember == true).
       isLoggedIn = true;
     } catch (e) {
       error = e.toString();
@@ -85,19 +92,11 @@ class AuthController extends ChangeNotifier {
       isLoading = true;
       notifyListeners();
       await repo.logout();
-      isLoggedIn = false; // <- clave: dispara AppRouter → AuthFlow
+      isLoggedIn = false; // dispara AppRouter → AuthFlow
       error = null;
     } finally {
       isLoading = false;
       notifyListeners();
     }
   }
-
-  /*
-  Future<void> logout() async {
-    await repo.logout();
-    isLoggedIn = false;
-    notifyListeners();
-  }
-  */
 }
