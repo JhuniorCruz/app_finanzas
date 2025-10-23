@@ -1,4 +1,7 @@
-// Capa Domain
+// lib/domain/repositories/auth_repository.dart
+
+/// Contrato de autenticación usado por el Controller/DI.
+/// Lo mantenemos igual para no romper nada arriba.
 abstract class AuthRepository {
   Future<void> login({
     required String email,
@@ -16,13 +19,12 @@ abstract class AuthRepository {
 
   Future<void> logout();
 
-  /// Devuelve true si hay una sesión PERSISTIDA (token + remember en storage)
+  /// Devuelve true si hay una sesión válida **y** el usuario eligió "recordarme".
+  Future<bool> isLoggedIn();
+
+  /// Devuelve true si Supabase tiene una sesión en el storage (independiente del flag remember).
   Future<bool> hasPersistedSession();
 
-  /// Devuelve el flag "recordarme"
+  /// Lee el flag "recordarme".
   Future<bool> getRememberFlag();
-
-  /// Mantén este helper si ya lo usas en otros lados:
-  /// por claridad lo igualamos a `hasPersistedSession()`.
-  Future<bool> isLoggedIn() => hasPersistedSession();
 }

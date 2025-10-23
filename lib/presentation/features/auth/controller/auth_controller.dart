@@ -3,26 +3,35 @@ import 'package:app_finanzas/domain/repositories/auth_repository.dart';
 
 class AuthController extends ChangeNotifier {
   final AuthRepository repo;
-
   bool isLoading = false;
-  bool isLoggedIn = false; // estado en runtime
+  bool isLoggedIn = false;
   String? error;
 
   AuthController(this.repo);
 
   bool get isAuthenticated => isLoggedIn;
 
-  /// Se llama al iniciar la app (desde DI: ..checkSession())
-  /// Revisa SOLO la sesión PERSISTIDA (remember + token).
   Future<void> checkSession() async {
     try {
       isLoading = true;
       notifyListeners();
-      isLoggedIn = await repo.hasPersistedSession();
-      error = null;
-    } catch (e) {
-      error = e.toString();
-      isLoggedIn = false;
+
+      final logged = await repo.isLoggedIn();
+      if (!logged) {
+        isLoggedIn = false;
+        return;
+      }
+
+      final remember = await repo.getRememberFlag();
+
+      if (!remember) {
+        // Sesión existe (de Supabase) pero el usuario no marcó "Recordarme".
+        // Salimos para que al reiniciar no se mantenga logueado.
+        await repo.logout();
+        isLoggedIn = false;
+      } else {
+        isLoggedIn = true;
+      }
     } finally {
       isLoading = false;
       notifyListeners();
@@ -40,8 +49,6 @@ class AuthController extends ChangeNotifier {
       notifyListeners();
 
       await repo.login(email: email, password: password, remember: remember);
-
-      // Logueado para ESTA ejecución (persistido solo si remember == true).
       isLoggedIn = true;
     } catch (e) {
       error = e.toString();
@@ -62,7 +69,7 @@ class AuthController extends ChangeNotifier {
       error = null;
       notifyListeners();
       await repo.register(name: name, email: email, password: password);
-      // decide si loguear auto o volver al login
+      // Si requiere confirmación por correo, aquí no marcamos logged in.
     } catch (e) {
       error = e.toString();
       rethrow;
@@ -92,7 +99,7 @@ class AuthController extends ChangeNotifier {
       isLoading = true;
       notifyListeners();
       await repo.logout();
-      isLoggedIn = false; // dispara AppRouter → AuthFlow
+      isLoggedIn = false;
       error = null;
     } finally {
       isLoading = false;

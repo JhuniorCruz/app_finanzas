@@ -4,9 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // Data
 import 'package:app_finanzas/data/datasources/local/local_storage.dart';
-import 'package:app_finanzas/data/repositories/debts_repository_impl.dart';
-import 'package:app_finanzas/data/repositories/transactions_repository_impl.dart';
-import 'package:app_finanzas/data/repositories/profile_repository_impl.dart';
+//import 'package:app_finanzas/data/repositories/debts_repository_impl.dart';
+//import 'package:app_finanzas/data/repositories/transactions_repository_impl.dart';
+//import 'package:app_finanzas/data/repositories/profile_repository_impl.dart';
+
+import 'package:app_finanzas/data/repositories/supabase_auth_repository.dart';
 
 // Domain (interfaces si las necesitas tipadas)
 import 'package:app_finanzas/domain/repositories/profile_repository.dart';
@@ -29,20 +31,32 @@ import 'package:app_finanzas/presentation/features/simulator/controller/simulato
 import 'package:app_finanzas/presentation/features/transactions/controller/transactions_controller.dart';
 import 'package:app_finanzas/presentation/features/score/controller/score_controller.dart';
 
-import 'package:app_finanzas/data/repositories/auth_repository_impl.dart';
+//import 'package:app_finanzas/data/repositories/auth_repository_impl.dart';
 import 'package:app_finanzas/presentation/features/auth/controller/auth_controller.dart';
+
+//SUPABASE
+import 'package:app_finanzas/data/repositories/supabase_transactions_repository.dart';
+import 'package:app_finanzas/data/repositories/supabase_debts_repository.dart';
+import 'package:app_finanzas/data/repositories/supabase_profile_repository.dart';
 
 Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
   final storage = LocalStorage(prefs);
 
+  // Repositorios REMOTOS
+  final txRepo = SupabaseTransactionsRepository();
+  final debtsRepo = SupabaseDebtsRepository();
+  final ProfileRepository profileRepo = SupabaseProfileRepository();
+
   // Repositorios
-  final debtsRepo = DebtsRepositoryImpl(storage);
-  final txRepo = TransactionsRepositoryImpl(storage);
+  //final debtsRepo = DebtsRepositoryImpl(storage);
+  //final txRepo = TransactionsRepositoryImpl(storage);
   // TIPAR como interfaz para evitar ambigüedades
-  final ProfileRepository profileRepo = ProfileRepositoryImpl(storage);
+  //final ProfileRepository profileRepo = ProfileRepositoryImpl(storage);
 
   // NUEVO: Auth
-  final authRepo = AuthRepositoryImpl(prefs);
+  //final authRepo = AuthRepositoryImpl(prefs);
+  // Auth con Supabase
+  final authRepo = SupabaseAuthRepository(prefs);
 
   // Use cases
   final listDebts = ListDebts(debtsRepo);
