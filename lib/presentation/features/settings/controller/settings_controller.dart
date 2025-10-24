@@ -1,5 +1,8 @@
+// lib/presentation/features/settings/controller/settings_controller.dart
 import 'package:flutter/foundation.dart';
+
 import '../../../../domain/entities/user_profile.dart';
+import 'package:app_finanzas/core/utils/scoring.dart'; // Thresholds / defaultThresholds
 
 /// Recibe dos funciones:
 ///  - _getProfile(): Future<UserProfile?>
@@ -18,6 +21,17 @@ class SettingsController extends ChangeNotifier {
   UserProfile? get profile => _profile;
   bool get busy => _busy;
 
+  /// Devuelve los umbrales que usa el Score. Si aún no hay perfil,
+  /// usa los valores por defecto (defaultThresholds).
+  Thresholds get thresholds => Thresholds(
+    savingsTarget: _profile?.savingsTarget ?? defaultThresholds.savingsTarget,
+    debtToIncomeWarning:
+        _profile?.debtToIncomeThreshold ??
+        defaultThresholds.debtToIncomeWarning,
+    utilizationWarning:
+        _profile?.utilizationThreshold ?? defaultThresholds.utilizationWarning,
+  );
+
   Future<void> load() async {
     _busy = true;
     notifyListeners();
@@ -29,13 +43,13 @@ class SettingsController extends ChangeNotifier {
     }
   }
 
-  /// <-- Este es el método que reclama tu SettingsPage
+  /// Actualiza y persiste el perfil completo.
   Future<void> updateProfile(UserProfile newProfile) async {
     _busy = true;
     notifyListeners();
     try {
-      await _saveProfile(newProfile); // persiste usando la función inyectada
-      _profile = newProfile; // actualiza el estado en memoria
+      await _saveProfile(newProfile);
+      _profile = newProfile;
     } finally {
       _busy = false;
       notifyListeners();

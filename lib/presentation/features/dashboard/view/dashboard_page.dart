@@ -5,14 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/utils/formatters.dart';
-import '../../../../core/utils/scoring.dart';
 import '../../../../core/theme/app_theme.dart';
+//import '../../../../core/utils/scoring.dart';
 import '../../../widgets/kpi_card.dart' as k;
 
 import '../../score/view/score_detail_page.dart';
 import '../../debts/controller/debts_controller.dart';
 import '../../transactions/controller/transactions_controller.dart';
 import '../../score/controller/score_controller.dart';
+import '../../settings/controller/settings_controller.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -24,39 +25,31 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   bool _loaded = false;
 
-  // Porcentajes seguros (sin NaN/Infinity) y acotados
-  double _pct(double num, double den) {
-    if (den <= 0) return 0;
-    final v = (num / den) * 100.0;
-    if (v.isNaN || v.isInfinite) return 0;
-    return v.clamp(0, 999).toDouble();
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_loaded) return;
     _loaded = true;
-    // Cargamos datos mínimos para que el dashboard calcule
+
+    // Cargamos datos y recalculamos el score con los umbrales del usuario
     Future.microtask(() async {
-      if (mounted) {
-        context.read<TransactionsController>().load();
-        context.read<DebtsController>().load();
-        context.read<ScoreController>().load();
-      }
+      if (!mounted) return;
+      context.read<TransactionsController>().load();
+      context.read<DebtsController>().load();
+
+      final settings = context.read<SettingsController>();
+      await context.read<ScoreController>().load(settings.thresholds);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final txVm = context.watch<TransactionsController>();
-    final debtVm = context.watch<DebtsController>();
     final scoreVm = context.watch<ScoreController>();
 
+    // ====== Cifras del MES (solo para el header) ======
     final now = DateTime.now();
-    final txs = txVm.items;
-
-    final monthTx = txs
+    final monthTx = txVm.items
         .where((t) => t.date.month == now.month && t.date.year == now.year)
         .toList();
 
@@ -66,75 +59,41 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final double totalExpenses = monthTx
         .where((t) => t.type == 'expense')
-        .fold<double>(0.0, (s, t) => s + t.amount.abs());
+        .fold<double>(0.0, (s, t) => s + t.amount);
 
     final double available = totalIncome - totalExpenses;
 
-    // ---- Gastos por categoría (ordenado desc) ----
+    // ====== Gastos por categoría (del mes) para el gráfico ======
     final Map<String, double> expensesByCat = {};
     for (final t in monthTx.where((t) => t.type == 'expense')) {
-      expensesByCat[t.category] =
-          (expensesByCat[t.category] ?? 0.0) + t.amount.abs();
+      expensesByCat[t.category] = (expensesByCat[t.category] ?? 0.0) + t.amount;
     }
 
-    // ---- Métricas y score educativo ----
-    final debts = debtVm.items;
-    final dpdList = debts
-        .where((d) => !d.paid)
-        .map((d) => getDaysPastDue(d.dueDate))
-        .toList();
-    final int dpdAvg = dpdList.isEmpty
-        ? 0
-        : (dpdList.reduce((a, b) => a + b) / dpdList.length).round();
+    // ====== Indicadores y puntaje desde ScoreController ======
+    final thresholds = scoreVm.thresholds; // ya no es null
+    final f = scoreVm.factors;
+    final res = scoreVm.result;
 
-    final double debtInstallments = debts
-        .where((d) => !d.paid)
-        .fold<double>(0.0, (s, d) => s + d.amount);
+    final double savingsRate = f?.savingsRate ?? 0.0;
+    final double dti = f?.debtToIncome ?? 0.0;
+    final double utilization = f?.utilization ?? 0.0;
+    final int score = res?.score ?? 0;
 
-    final double debtToIncome = _pct(debtInstallments, totalIncome);
-
-    double utilization = 0.0;
-    final withLimit = debts
-        .where((d) => d.creditLimit != null && d.creditLimit! > 0)
-        .toList();
-    if (withLimit.isNotEmpty) {
-      final double used = withLimit.fold<double>(
-        0.0,
-        (s, d) => s + d.totalDebt,
-      );
-      final double limit = withLimit.fold<double>(
-        0.0,
-        (s, d) => s + (d.creditLimit ?? 0.0),
-      );
-      utilization = _pct(used, limit);
-    }
-
-    final double savingsRate = _pct(totalIncome - totalExpenses, totalIncome);
-
-    final thresholds = scoreVm.thresholds ?? defaultThresholds;
-
-    final score = calculateScore(
-      ScoreFactors(
-        dpd: dpdAvg,
-        debtToIncome: debtToIncome,
-        utilization: utilization,
-        savingsRate: savingsRate,
-      ),
-      thresholds,
-    );
-
-    final kpiStatus = {
-      'good': k.KpiStatus.good,
-      'warning': k.KpiStatus.warning,
-      'danger': k.KpiStatus.danger,
-    }[score.status]!;
+    final status = res?.status ?? 'warning';
+    final kpiStatus =
+        {
+          'good': k.KpiStatus.good,
+          'warning': k.KpiStatus.warning,
+          'danger': k.KpiStatus.danger,
+        }[status] ??
+        k.KpiStatus.warning;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Inicio')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== Header “Mi Control” =====
+          // ===== Header “Mi Control” (cifras del mes) =====
           _BalanceHeaderCard(
             available: available,
             income: totalIncome,
@@ -195,7 +154,7 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           const SizedBox(height: 12),
 
-          // ===== Indicadores financieros =====
+          // ===== Indicadores financieros (desde ScoreController) =====
           Text(
             'Indicadores financieros',
             style: Theme.of(context).textTheme.titleMedium,
@@ -219,8 +178,8 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               k.KpiCard(
                 title: 'Deuda/Ingreso',
-                value: '${debtToIncome.toStringAsFixed(0)}%',
-                status: debtToIncome <= thresholds.debtToIncomeWarning
+                value: '${dti.toStringAsFixed(0)}%',
+                status: dti <= thresholds.debtToIncomeWarning
                     ? k.KpiStatus.good
                     : k.KpiStatus.warning,
                 icon: Icons.trending_down_rounded,
@@ -235,7 +194,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               k.KpiCard(
                 title: 'Puntaje Educativo',
-                value: score.score.toString(),
+                value: score.toString(),
                 status: kpiStatus,
                 icon: Icons.insights_rounded,
                 onTap: () {
@@ -248,7 +207,7 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           const SizedBox(height: 16),
 
-          // ===== Gráfico: Gastos por categoría =====
+          // ===== Gráfico: Gastos por categoría (del mes) =====
           if (expensesByCat.isNotEmpty) ...[
             Text(
               'Gastos por categoría',
@@ -269,7 +228,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-// ================== Widgets auxiliares (idénticos) ==================
+// ================== Widgets auxiliares ==================
 
 class _BalanceHeaderCard extends StatelessWidget {
   final double available, income, expenses;
@@ -471,19 +430,14 @@ class _ExpenseBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Ordenamos por monto (absoluto) desc
     final keys = data.keys.toList()
-      ..sort((a, b) => (data[b] ?? 0).abs().compareTo((data[a] ?? 0).abs()));
+      ..sort((a, b) => (data[b] ?? 0).compareTo((data[a] ?? 0)));
 
-    // Usamos valores absolutos para todo el cálculo
-    final valuesAbs = keys.map((k) => (data[k] ?? 0).abs()).toList();
+    final values = keys.map((k) => (data[k] ?? 0)).toList();
+    final maxVal = values.isEmpty ? 0.0 : values.reduce(math.max);
 
-    final maxVal = valuesAbs.isEmpty ? 0.0 : valuesAbs.reduce(math.max);
-    // Calcula el paso con el máximo real y agrega un escalón extra arriba
     final step = _niceInterval(maxVal);
-    final maxY = maxVal == 0
-        ? step * 5
-        : ((maxVal / step).ceil() + 1) * step; // +1 step = margen superior
+    final maxY = maxVal == 0 ? step * 5 : ((maxVal / step).ceil() + 1) * step;
 
     const palette = [
       Color(0xFF22C55E),
@@ -529,20 +483,13 @@ class _ExpenseBarChart extends StatelessWidget {
                 reservedSize: 38,
                 interval: step,
                 getTitlesWidget: (value, _) {
-                  // Solo mostramos múltiplos del intervalo…
-                  bool isMultiple(double v, double base) {
-                    const eps = 1e-6;
-                    final r = v % base;
-                    return r.abs() < eps || (base - r).abs() < eps;
-                  }
-
-                  if (!isMultiple(value, step)) return const SizedBox.shrink();
-
-                  // …y ocultamos la etiqueta del valor máximo para no pegarla al borde superior
-                  const epsTop = 1e-3;
-                  if ((maxY - value).abs() < epsTop)
+                  if (!_isMultiple(value, step)) {
                     return const SizedBox.shrink();
-
+                  }
+                  const epsTop = 1e-3;
+                  if ((maxY - value).abs() < epsTop) {
+                    return const SizedBox.shrink();
+                  }
                   return Text(
                     value.toInt().toString(),
                     style: const TextStyle(
@@ -553,7 +500,6 @@ class _ExpenseBarChart extends StatelessWidget {
                 },
               ),
             ),
-
             bottomTitles: AxisTitles(
               axisNameWidget: const Padding(
                 padding: EdgeInsets.only(top: 8),
@@ -568,7 +514,9 @@ class _ExpenseBarChart extends StatelessWidget {
                 reservedSize: 56,
                 getTitlesWidget: (value, _) {
                   final i = value.toInt();
-                  if (i < 0 || i >= keys.length) return const SizedBox.shrink();
+                  if (i < 0 || i >= keys.length) {
+                    return const SizedBox.shrink();
+                  }
                   return Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Transform.rotate(
@@ -599,7 +547,7 @@ class _ExpenseBarChart extends StatelessWidget {
             ),
           ),
           barGroups: List.generate(keys.length, (i) {
-            final y = valuesAbs[i]; // <- valor positivo siempre
+            final y = values[i];
             final color = palette[i % palette.length];
             return BarChartGroupData(
               x: i,

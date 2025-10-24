@@ -1,10 +1,10 @@
+// lib/presentation/features/score/controller/score_controller.dart
 import 'package:flutter/foundation.dart';
 
 import '../../../../application/usecases/list_transactions.dart';
 import '../../../../application/usecases/list_debts.dart';
-//import '../../../../domain/entities/transaction.dart';
-//import '../../../../domain/entities/debt.dart';
-import '../../../../core/utils/formatters.dart'; // getDaysPastDue
+import '../../../../domain/entities/transaction.dart' as dom;
+import '../../../../domain/entities/debt.dart';
 import '../../../../core/utils/scoring.dart';
 
 class ScoreController extends ChangeNotifier {
@@ -20,82 +20,89 @@ class ScoreController extends ChangeNotifier {
   ScoreResult? result;
   ScoreFactors? factors;
 
-  /// (Si más adelante lees estos valores desde Settings, injéctalos aquí)
-  Thresholds thresholds = const Thresholds(
+  /// Umbrales actuales (se pueden inyectar desde Ajustes)
+  Thresholds _thresholds = const Thresholds(
+    savingsTarget: 20, // %
     debtToIncomeWarning: 30, // %
     utilizationWarning: 50, // %
-    savingsTarget: 20, // %
   );
-
-  double _pct(num nume, num deno) {
-    if (deno <= 0) return 0;
-    final v = (nume / deno) * 100.0;
-    if (v.isNaN || v.isInfinite) return 0;
-    return v.clamp(0, 999).toDouble();
+  Thresholds get thresholds => _thresholds;
+  void setThresholds(Thresholds t) {
+    _thresholds = t;
+    notifyListeners();
   }
 
-  Future<void> load() async {
+  /// Si pasas [t], actualiza umbrales y calcula con esos valores.
+  Future<void> load([Thresholds? t]) async {
+    if (t != null) _thresholds = t;
+
     _loading = true;
     notifyListeners();
 
-    // --- Transacciones del MES actual (usa type, no el signo del monto) ---
-    final txAll = await _listTx();
-    final now = DateTime.now();
-    final monthTx = txAll
-        .where((t) => t.date.month == now.month && t.date.year == now.year)
-        .toList();
+    try {
+      final List<dom.FinanceTx> tx = await _listTx();
+      final List<Debt> debts = await _listDebts();
 
-    final double incomes = monthTx
-        .where((t) => t.type == 'income')
-        .fold<double>(0, (s, t) => s + t.amount);
+      // ✅ Tus montos en DB son positivos: distingue por 'type'
+      final double incomes = tx
+          .where((e) => e.type == 'income')
+          .fold<double>(0, (s, e) => s + e.amount);
 
-    final double expenses = monthTx
-        .where((t) => t.type == 'expense')
-        .fold<double>(0, (s, t) => s + t.amount);
+      final double expenses = tx
+          .where((e) => e.type == 'expense')
+          .fold<double>(0, (s, e) => s + e.amount);
 
-    // % Ahorro = (ingresos - gastos) / ingresos * 100
-    final double savingsRate = _pct(incomes - expenses, incomes);
+      // Ahorro (%) = (ingresos - gastos) / ingresos * 100   (clamp para evitar NaN)
+      final double savingsRate = incomes <= 0
+          ? 0.0
+          : (((incomes - expenses) / incomes) * 100).clamp(0, 999).toDouble();
 
-    // --- Deudas activas ---
-    final debtsAll = await _listDebts();
-    final unpaid = debtsAll.where((d) => !d.paid).toList();
+      // Días de atraso promedio (solo deudas no pagadas)
+      final List<Debt> unpaid = debts.where((d) => !d.paid).toList();
+      final List<int> dpdList = unpaid
+          .map((d) => _daysPastDue(d.dueDate))
+          .toList();
+      final int dpd = dpdList.isEmpty
+          ? 0
+          : (dpdList.reduce((a, b) => a + b) / dpdList.length).round();
 
-    // DPD promedio (solo deudas no pagadas)
-    final dpdList = unpaid.map((d) => getDaysPastDue(d.dueDate)).toList();
-    final int dpd = dpdList.isEmpty
-        ? 0
-        : (dpdList.reduce((a, b) => a + b) / dpdList.length).round();
+      // DTI (%) = suma de cuotas mensuales / ingresos * 100
+      final double monthlyDebt = debts.fold<double>(0, (s, d) => s + d.amount);
 
-    // Suma de cuotas mensuales (asumiendo que `amount` es la cuota)
-    final double monthlyDebt = unpaid.fold<double>(0, (s, d) => s + d.amount);
+      final double dti = incomes <= 0
+          ? 0.0
+          : (monthlyDebt / incomes * 100).clamp(0, 999).toDouble();
 
-    // DTI = cuota total / ingresos * 100
-    final double dti = _pct(monthlyDebt, incomes);
-
-    // Utilización = deuda usada / línea total * 100 (en deudas con límite)
-    double utilization = 0.0;
-    final withLimit = unpaid.where((d) => (d.creditLimit ?? 0) > 0).toList();
-    if (withLimit.isNotEmpty) {
-      final used = withLimit.fold<double>(0, (s, d) => s + d.totalDebt);
-      final limit = withLimit.fold<double>(
+      // Utilización (%) = total_debt / credit_limit * 100
+      final double totalLimit = debts.fold<double>(
         0,
         (s, d) => s + (d.creditLimit ?? 0),
       );
-      utilization = _pct(used, limit);
+      final double totalDebt = debts.fold<double>(0, (s, d) => s + d.totalDebt);
+
+      final double utilization = totalLimit <= 0
+          ? 0.0
+          : (totalDebt / totalLimit * 100).clamp(0, 999).toDouble();
+
+      factors = ScoreFactors(
+        dpd: dpd,
+        debtToIncome: dti,
+        utilization: utilization,
+        savingsRate: savingsRate,
+      );
+
+      result = calculateScore(factors!, _thresholds);
+      score = result!.score;
+    } finally {
+      _loading = false;
+      notifyListeners();
     }
-
-    // --- Cálculo de score ---
-    factors = ScoreFactors(
-      dpd: dpd,
-      debtToIncome: dti,
-      utilization: utilization,
-      savingsRate: savingsRate,
-    );
-
-    result = calculateScore(factors!, thresholds);
-    score = result!.score;
-
-    _loading = false;
-    notifyListeners();
   }
+}
+
+int _daysPastDue(DateTime dueDate) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
+  return today.isAfter(due) ? today.difference(due).inDays : 0;
 }
