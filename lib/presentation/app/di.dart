@@ -78,7 +78,7 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
     ),
 
     ChangeNotifierProvider(
-      create: (_) => DebtsController(listDebts, addDebtUC, markPaidUC),
+      create: (_) => DebtsController(listDebts, addDebtUC, markPaidUC, addTx),
     ),
     ChangeNotifierProvider(create: (_) => DashboardController(listTx)),
     ChangeNotifierProvider(

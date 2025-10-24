@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  static const primary = Color(0xFF6366F1);
+  static const primary = Color.fromARGB(255, 48, 50, 191);
+  //static const primary = Color(0xFF6366F1);
   static const accent = Color(0xFF10B981);
   static const destructive = Color(0xFFEF4444);
   static const background = Color(0xFFF8F9FC);

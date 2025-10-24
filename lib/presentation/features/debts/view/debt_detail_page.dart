@@ -3,17 +3,27 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
-import '../controller/debts_controller.dart';
 
-class DebtDetailPage extends StatelessWidget {
+import '../controller/debts_controller.dart';
+import '../../transactions/controller/transactions_controller.dart';
+import '../../score/controller/score_controller.dart';
+
+class DebtDetailPage extends StatefulWidget {
   final String debtId;
   const DebtDetailPage({super.key, required this.debtId});
+
+  @override
+  State<DebtDetailPage> createState() => _DebtDetailPageState();
+}
+
+class _DebtDetailPageState extends State<DebtDetailPage> {
+  bool _submitting = false;
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<DebtsController>();
     final debt = vm.items.firstWhere(
-      (d) => d.id == debtId,
+      (d) => d.id == widget.debtId,
       orElse: () => throw Exception('Deuda no encontrada'),
     );
 
@@ -47,13 +57,48 @@ class DebtDetailPage extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           child: ElevatedButton.icon(
-            icon: const Icon(Icons.check_circle_outline),
-            label: const Text('Marcar como pagado'),
-            onPressed: debt.paid
+            icon: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.check_circle_outline),
+            label: Text(debt.paid ? 'Ya pagada' : 'Pagar y marcar'),
+            onPressed: (debt.paid || _submitting)
                 ? null
                 : () async {
-                    await context.read<DebtsController>().markAsPaid(debt.id);
-                    if (context.mounted) Navigator.pop(context);
+                    setState(() => _submitting = true);
+                    try {
+                      // 1) Crear gasto (expense) y 2) marcar deuda pagada
+                      await context.read<DebtsController>().payAndMarkPaid(
+                        debt,
+                        amount: debt
+                            .amount, // o debt.totalDebt si deseas liquidar todo
+                        category: 'debt',
+                        note: 'Pago deuda ${debt.title}',
+                      );
+
+                      // 3) Refrescar transacciones y score para que el dashboard baje el saldo al instante
+                      await context.read<TransactionsController>().load();
+                      await context.read<ScoreController>().load();
+
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Pago registrado')),
+                      );
+                      Navigator.pop(context);
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error al pagar: $e')),
+                      );
+                    } finally {
+                      if (mounted) setState(() => _submitting = false);
+                    }
                   },
           ),
         ),
@@ -135,7 +180,7 @@ class _InfoCard extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // Fecha de vencimiento + Estado (dos columnas)
+          // Fecha de vencimiento + Estado
           Row(
             children: [
               Expanded(
@@ -243,7 +288,6 @@ class _UtilBar extends StatelessWidget {
 }
 
 int _daysPastDue(DateTime dueDate) {
-  // compara por fecha (sin horas) y retorna días de atraso (0 si aún no vence)
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
