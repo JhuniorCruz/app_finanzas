@@ -53,6 +53,20 @@ class _SimulatorPageState extends State<SimulatorPage> {
     final currentSavingsTarget = profile?.savingsTarget ?? 10.0;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Simulador'),
+        backgroundColor: Colors.white,
+        foregroundColor: Color(0xFF0F172A),
+        elevation: 0,
+        centerTitle: false,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w700, // negrita
+          fontFamily: 'Inter', // tu tipo de letra
+          color: Color.fromRGBO(48, 50, 191, 1),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [

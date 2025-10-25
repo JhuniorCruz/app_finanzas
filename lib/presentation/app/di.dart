@@ -3,7 +3,7 @@ import 'package:provider/single_child_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Data
-import 'package:app_finanzas/data/datasources/local/local_storage.dart';
+//import 'package:app_finanzas/data/datasources/local/local_storage.dart';
 //import 'package:app_finanzas/data/repositories/debts_repository_impl.dart';
 //import 'package:app_finanzas/data/repositories/transactions_repository_impl.dart';
 //import 'package:app_finanzas/data/repositories/profile_repository_impl.dart';
@@ -40,7 +40,7 @@ import 'package:app_finanzas/data/repositories/supabase_debts_repository.dart';
 import 'package:app_finanzas/data/repositories/supabase_profile_repository.dart';
 
 Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
-  final storage = LocalStorage(prefs);
+  //final storage = LocalStorage(prefs);
 
   // Repositorios REMOTOS
   final txRepo = SupabaseTransactionsRepository();

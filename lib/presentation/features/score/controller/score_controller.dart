@@ -4,7 +4,8 @@ import 'package:flutter/foundation.dart';
 import '../../../../application/usecases/list_transactions.dart';
 import '../../../../application/usecases/list_debts.dart';
 import '../../../../domain/entities/transaction.dart' as dom;
-import '../../../../domain/entities/debt.dart';
+import '../../../../domain/entities/debt.dart' as dom;
+import '../../../../core/utils/formatters.dart' show getDaysPastDue;
 import '../../../../core/utils/scoring.dart';
 
 class ScoreController extends ChangeNotifier {
@@ -16,93 +17,156 @@ class ScoreController extends ChangeNotifier {
   bool _loading = false;
   bool get loading => _loading;
 
-  int score = 0;
-  ScoreResult? result;
-  ScoreFactors? factors;
-
-  /// Umbrales actuales (se pueden inyectar desde Ajustes)
-  Thresholds _thresholds = const Thresholds(
-    savingsTarget: 20, // %
-    debtToIncomeWarning: 30, // %
-    utilizationWarning: 50, // %
-  );
+  /// Umbrales vigentes (vienen de Settings; si no hay, usa defaults)
+  Thresholds _thresholds = defaultThresholds;
   Thresholds get thresholds => _thresholds;
-  void setThresholds(Thresholds t) {
-    _thresholds = t;
-    notifyListeners();
+
+  // ---------- RESULTADOS DEL MES ACTUAL ----------
+  ScoreFactors? _monthlyFactors;
+  ScoreResult? _monthlyResult;
+
+  ScoreFactors? get monthlyFactors => _monthlyFactors;
+  ScoreResult? get monthlyResult => _monthlyResult;
+  int get monthlyScore => _monthlyResult?.score ?? 0;
+
+  // ---------- RESULTADOS HISTÓRICOS (vida útil) ----------
+  ScoreFactors? _lifetimeFactors;
+  ScoreResult? _lifetimeResult;
+
+  ScoreFactors? get lifetimeFactors => _lifetimeFactors;
+  ScoreResult? get lifetimeResult => _lifetimeResult;
+  int get lifetimeScore => _lifetimeResult?.score ?? 0;
+
+  // ---------- ALIAS de compatibilidad (si en algún sitio usas "total*") ----------
+  ScoreFactors? get totalFactors => _lifetimeFactors;
+  ScoreResult? get totalResult => _lifetimeResult;
+  int get totalScore => lifetimeScore;
+
+  // ---------------- Utils ----------------
+  double _safePct(num nume, num den) {
+    if (den <= 0) return 0;
+    final v = (nume / den) * 100.0;
+    return (v.isFinite ? v : 0).clamp(0, 999).toDouble();
   }
 
-  /// Si pasas [t], actualiza umbrales y calcula con esos valores.
-  Future<void> load([Thresholds? t]) async {
-    if (t != null) _thresholds = t;
+  double _savingsRate(num incomes, num expensesAbs) {
+    return incomes <= 0
+        ? 0.0
+        : (((incomes - expensesAbs) / incomes) * 100).clamp(0, 999).toDouble();
+  }
 
+  double _utilization(List<dom.Debt> debts) {
+    // Solo deudas activas con línea
+    final active = debts
+        .where((d) => !d.paid && (d.creditLimit ?? 0) > 0)
+        .toList();
+    if (active.isEmpty) return 0.0;
+
+    final used = active.fold<double>(0, (s, d) => s + d.totalDebt);
+    final limit = active.fold<double>(0, (s, d) => s + (d.creditLimit ?? 0));
+    return _safePct(used, limit);
+  }
+
+  /// Carga transacciones y deudas y calcula:
+  /// - score mensual (mes de [forMonth], por defecto: ahora)
+  /// - score histórico (sobre todo el dataset)
+  Future<void> load([Thresholds? t, DateTime? forMonth]) async {
     _loading = true;
     notifyListeners();
 
     try {
+      if (t != null) _thresholds = t;
+
       final List<dom.FinanceTx> tx = await _listTx();
-      final List<Debt> debts = await _listDebts();
+      final List<dom.Debt> debts = await _listDebts();
 
-      // ✅ Tus montos en DB son positivos: distingue por 'type'
-      final double incomes = tx
-          .where((e) => e.type == 'income')
-          .fold<double>(0, (s, e) => s + e.amount);
+      final base = forMonth ?? DateTime.now();
+      final m = base.month, y = base.year;
 
-      final double expenses = tx
-          .where((e) => e.type == 'expense')
-          .fold<double>(0, (s, e) => s + e.amount);
-
-      // Ahorro (%) = (ingresos - gastos) / ingresos * 100   (clamp para evitar NaN)
-      final double savingsRate = incomes <= 0
-          ? 0.0
-          : (((incomes - expenses) / incomes) * 100).clamp(0, 999).toDouble();
-
-      // Días de atraso promedio (solo deudas no pagadas)
-      final List<Debt> unpaid = debts.where((d) => !d.paid).toList();
-      final List<int> dpdList = unpaid
-          .map((d) => _daysPastDue(d.dueDate))
+      // ===== MES ACTUAL =====
+      final monthTx = tx
+          .where((e) => e.date.month == m && e.date.year == y)
           .toList();
-      final int dpd = dpdList.isEmpty
-          ? 0
-          : (dpdList.reduce((a, b) => a + b) / dpdList.length).round();
 
-      // DTI (%) = suma de cuotas mensuales / ingresos * 100
-      final double monthlyDebt = debts.fold<double>(0, (s, d) => s + d.amount);
+      final incomesM = monthTx
+          .where((t) => t.type == 'income')
+          .fold<double>(0, (s, t) => s + t.amount);
 
-      final double dti = incomes <= 0
-          ? 0.0
-          : (monthlyDebt / incomes * 100).clamp(0, 999).toDouble();
+      // Por robustez, sumamos ABS por si tienes gastos antiguos negativos
+      final expensesAbsM = monthTx
+          .where((t) => t.type == 'expense')
+          .fold<double>(0, (s, t) => s + t.amount.abs());
 
-      // Utilización (%) = total_debt / credit_limit * 100
-      final double totalLimit = debts.fold<double>(
+      final savingsM = _savingsRate(incomesM, expensesAbsM);
+
+      final monthlyDebts = debts
+          .where((d) => !d.paid && d.dueDate.month == m && d.dueDate.year == y)
+          .toList();
+
+      final installmentsM = monthlyDebts.fold<double>(
         0,
-        (s, d) => s + (d.creditLimit ?? 0),
-      );
-      final double totalDebt = debts.fold<double>(0, (s, d) => s + d.totalDebt);
-
-      final double utilization = totalLimit <= 0
-          ? 0.0
-          : (totalDebt / totalLimit * 100).clamp(0, 999).toDouble();
-
-      factors = ScoreFactors(
-        dpd: dpd,
-        debtToIncome: dti,
-        utilization: utilization,
-        savingsRate: savingsRate,
+        (s, d) => s + d.amount,
       );
 
-      result = calculateScore(factors!, _thresholds);
-      score = result!.score;
+      final dtiM = _safePct(installmentsM, incomesM);
+
+      final dpdM = monthlyDebts.isEmpty
+          ? 0
+          : (monthlyDebts
+                        .map((d) => getDaysPastDue(d.dueDate))
+                        .reduce((a, b) => a + b) /
+                    monthlyDebts.length)
+                .round();
+
+      final utilM = _utilization(debts);
+
+      _monthlyFactors = ScoreFactors(
+        dpd: dpdM,
+        debtToIncome: dtiM,
+        utilization: utilM,
+        savingsRate: savingsM,
+      );
+      _monthlyResult = calculateScore(_monthlyFactors!, _thresholds);
+
+      // ===== HISTÓRICO TOTAL =====
+      final incomesT = tx
+          .where((t) => t.type == 'income')
+          .fold<double>(0, (s, t) => s + t.amount);
+
+      final expensesAbsT = tx
+          .where((t) => t.type == 'expense')
+          .fold<double>(0, (s, t) => s + t.amount.abs());
+
+      final savingsT = _savingsRate(incomesT, expensesAbsT);
+
+      final activeDebts = debts.where((d) => !d.paid).toList();
+      final installmentsAll = activeDebts.fold<double>(
+        0,
+        (s, d) => s + d.amount,
+      );
+
+      final dtiT = _safePct(installmentsAll, incomesT);
+
+      final dpdT = activeDebts.isEmpty
+          ? 0
+          : (activeDebts
+                        .map((d) => getDaysPastDue(d.dueDate))
+                        .reduce((a, b) => a + b) /
+                    activeDebts.length)
+                .round();
+
+      final utilT = _utilization(debts);
+
+      _lifetimeFactors = ScoreFactors(
+        dpd: dpdT,
+        debtToIncome: dtiT,
+        utilization: utilT,
+        savingsRate: savingsT,
+      );
+      _lifetimeResult = calculateScore(_lifetimeFactors!, _thresholds);
     } finally {
       _loading = false;
       notifyListeners();
     }
   }
-}
-
-int _daysPastDue(DateTime dueDate) {
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
-  return today.isAfter(due) ? today.difference(due).inDays : 0;
 }

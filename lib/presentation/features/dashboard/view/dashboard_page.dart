@@ -1,3 +1,4 @@
+// lib/presentation/features/dashboard/view/dashboard_page.dart
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -6,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/theme/app_theme.dart';
-//import '../../../../core/utils/scoring.dart';
+import '../../../../core/utils/scoring.dart' show Thresholds; // <- para el tipo
 import '../../../widgets/kpi_card.dart' as k;
 
 import '../../score/view/score_detail_page.dart';
@@ -38,6 +39,7 @@ class _DashboardPageState extends State<DashboardPage> {
       context.read<DebtsController>().load();
 
       final settings = context.read<SettingsController>();
+      // ScoreController.load([thresholds])
       await context.read<ScoreController>().load(settings.thresholds);
     });
   }
@@ -57,6 +59,7 @@ class _DashboardPageState extends State<DashboardPage> {
         .where((t) => t.type == 'income')
         .fold<double>(0.0, (s, t) => s + t.amount);
 
+    // En tu modelo los "expense" ya vienen en positivo
     final double totalExpenses = monthTx
         .where((t) => t.type == 'expense')
         .fold<double>(0.0, (s, t) => s + t.amount);
@@ -69,27 +72,40 @@ class _DashboardPageState extends State<DashboardPage> {
       expensesByCat[t.category] = (expensesByCat[t.category] ?? 0.0) + t.amount;
     }
 
-    // ====== Indicadores y puntaje desde ScoreController ======
-    final thresholds = scoreVm.thresholds; // ya no es null
-    final f = scoreVm.factors;
-    final res = scoreVm.result;
+    // ====== Indicadores y puntaje desde ScoreController (MENSUAL) ======
+    final thresholds = scoreVm.thresholds;
+    final mf = scoreVm.monthlyFactors;
+    final mr = scoreVm.monthlyResult;
 
-    final double savingsRate = f?.savingsRate ?? 0.0;
-    final double dti = f?.debtToIncome ?? 0.0;
-    final double utilization = f?.utilization ?? 0.0;
-    final int score = res?.score ?? 0;
+    final double savingsRate = mf?.savingsRate ?? 0.0;
+    final double dti = mf?.debtToIncome ?? 0.0;
+    final double utilization = mf?.utilization ?? 0.0;
+    final int score = mr?.score ?? 0;
 
-    final status = res?.status ?? 'warning';
-    final kpiStatus =
+    final status = mr?.status ?? 'warning';
+    final k.KpiStatus kpiStatus =
         {
           'good': k.KpiStatus.good,
-          'warning': k.KpiStatus.warning,
           'danger': k.KpiStatus.danger,
+          'warning': k.KpiStatus.warning,
         }[status] ??
         k.KpiStatus.warning;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Inicio')),
+      appBar: AppBar(
+        title: const Text('PagoScore'),
+        backgroundColor: Colors.white,
+        foregroundColor: Color(0xFF0F172A),
+        elevation: 0,
+        centerTitle: false,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w700, // negrita
+          fontFamily: 'Inter', // tu tipo de letra
+          color: Color.fromRGBO(48, 50, 191, 1),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -171,25 +187,19 @@ class _DashboardPageState extends State<DashboardPage> {
               k.KpiCard(
                 title: '% Ahorro',
                 value: '${savingsRate.toStringAsFixed(1)}%',
-                status: savingsRate >= thresholds.savingsTarget
-                    ? k.KpiStatus.good
-                    : k.KpiStatus.warning,
+                status: _statusForSavings(savingsRate, thresholds),
                 icon: Icons.savings_rounded,
               ),
               k.KpiCard(
                 title: 'Deuda/Ingreso',
                 value: '${dti.toStringAsFixed(0)}%',
-                status: dti <= thresholds.debtToIncomeWarning
-                    ? k.KpiStatus.good
-                    : k.KpiStatus.warning,
+                status: _statusForDTI(dti, thresholds),
                 icon: Icons.trending_down_rounded,
               ),
               k.KpiCard(
                 title: 'Utilización',
                 value: '${utilization.toStringAsFixed(0)}%',
-                status: utilization <= thresholds.utilizationWarning
-                    ? k.KpiStatus.good
-                    : k.KpiStatus.danger,
+                status: _statusForUtil(utilization, thresholds),
                 icon: Icons.credit_card_rounded,
               ),
               k.KpiCard(
@@ -225,6 +235,24 @@ class _DashboardPageState extends State<DashboardPage> {
         ],
       ),
     );
+  }
+
+  // ----- Helpers de estado para KPIs -----
+  k.KpiStatus _statusForSavings(double savings, Thresholds t) {
+    // OK si alcanzas la meta; de lo contrario warning
+    return savings >= t.savingsTarget ? k.KpiStatus.good : k.KpiStatus.warning;
+  }
+
+  k.KpiStatus _statusForDTI(double dti, Thresholds t) {
+    // OK si tu DTI está por debajo del umbral
+    return dti <= t.debtToIncomeWarning
+        ? k.KpiStatus.good
+        : k.KpiStatus.warning;
+  }
+
+  k.KpiStatus _statusForUtil(double util, Thresholds t) {
+    // Verde abajo del umbral, rojo si lo sobrepasa (tarjetas suelen ser crítico)
+    return util <= t.utilizationWarning ? k.KpiStatus.good : k.KpiStatus.danger;
   }
 }
 
@@ -362,7 +390,7 @@ class _StatPill extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
                 FittedBox(
                   fit: BoxFit.scaleDown,

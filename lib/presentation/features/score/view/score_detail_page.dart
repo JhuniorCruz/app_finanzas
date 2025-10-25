@@ -1,16 +1,37 @@
+// lib/presentation/features/score/view/score_detail_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/utils/formatters.dart'; // getDaysPastDue(), formatDate/formatCurrency
-import '../../../../core/utils/scoring.dart'; // calculateScore, ScoreFactors, Thresholds, defaultThresholds
-import '../../transactions/controller/transactions_controller.dart';
-import '../../debts/controller/debts_controller.dart';
+import '../../../../core/utils/scoring.dart' show Thresholds;
+import '../../score/controller/score_controller.dart';
 import '../../settings/controller/settings_controller.dart';
-import 'score_recommendations_page.dart'; // ← sin hide
+import 'score_recommendations_page.dart';
 
-class ScoreDetailPage extends StatelessWidget {
+class ScoreDetailPage extends StatefulWidget {
   const ScoreDetailPage({super.key});
+
+  @override
+  State<ScoreDetailPage> createState() => _ScoreDetailPageState();
+}
+
+class _ScoreDetailPageState extends State<ScoreDetailPage> {
+  bool _kickedLoad = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Si alguien entró directo a esta pantalla, asegura que el score esté cargado
+    if (_kickedLoad) return;
+    _kickedLoad = true;
+    Future.microtask(() async {
+      final scoreVm = context.read<ScoreController>();
+      if (scoreVm.monthlyResult == null) {
+        final settings = context.read<SettingsController>();
+        await scoreVm.load(settings.thresholds);
+      }
+    });
+  }
 
   // ---------- Helpers de estado visual ----------
   KpiStatus _statusDpd(int dpd) {
@@ -54,100 +75,56 @@ class ScoreDetailPage extends StatelessWidget {
     }
   }
 
-  double _pct(double num, double den) {
-    if (den <= 0) return 0;
-    final v = (num / den) * 100.0;
-    if (v.isNaN || v.isInfinite) return 0;
-    return v.clamp(0, 999).toDouble();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final txs = context.watch<TransactionsController>().items;
-    final debts = context.watch<DebtsController>().items;
-    final profile = context.watch<SettingsController>().profile;
+    final scoreVm = context.watch<ScoreController>();
 
-    final thresholds = Thresholds(
-      debtToIncomeWarning:
-          profile?.debtToIncomeThreshold ??
-          defaultThresholds.debtToIncomeWarning,
-      utilizationWarning:
-          profile?.utilizationThreshold ?? defaultThresholds.utilizationWarning,
-      savingsTarget: profile?.savingsTarget ?? defaultThresholds.savingsTarget,
-    );
+    // Umbrales elegidos por el usuario (guardados en Settings/Profile)
+    final Thresholds t = scoreVm.thresholds;
 
-    // Mes actual
-    final now = DateTime.now();
-    final monthTx = txs
-        .where((t) => t.date.month == now.month && t.date.year == now.year)
-        .toList();
+    // Factores y resultados MENSUALES (los que se ven en el dashboard)
+    final mf = scoreVm.monthlyFactors;
+    final mr = scoreVm.monthlyResult;
 
-    final income = monthTx
-        .where((t) => t.type == 'income')
-        .fold<double>(0, (a, t) => a + t.amount);
-    final expenses = monthTx
-        .where((t) => t.type == 'expense')
-        .fold<double>(0, (a, t) => a + t.amount);
+    // Factores y resultado HISTÓRICO (opcional, puede ser null si no lo calculas)
+    final lf = scoreVm.lifetimeFactors;
+    final lr = scoreVm.lifetimeResult;
 
-    final debtsActive = debts.where((d) => !d.paid).toList();
-
-    final dpdAvg = debtsActive.isEmpty
-        ? 0
-        : (debtsActive
-                      .map((d) => getDaysPastDue(d.dueDate))
-                      .reduce((a, b) => a + b) /
-                  debtsActive.length)
-              .round();
-
-    final installments = debtsActive.fold<double>(0, (a, d) => a + d.amount);
-    final dti = _pct(installments, income);
-
-    double utilization = 0;
-    final withLimit = debtsActive.where(
-      (d) => d.creditLimit != null && d.creditLimit! > 0,
-    );
-    if (withLimit.isNotEmpty) {
-      final used = withLimit.fold<double>(0, (a, d) => a + d.totalDebt);
-      final limit = withLimit.fold<double>(
-        0,
-        (a, d) => a + (d.creditLimit ?? 0),
-      );
-      utilization = _pct(used, limit);
-    }
-
-    final savingsRate = _pct(income - expenses, income);
-
-    // Calcula puntaje global
-    final scoreObj = calculateScore(
-      ScoreFactors(
-        dpd: dpdAvg,
-        debtToIncome: dti,
-        utilization: utilization,
-        savingsRate: savingsRate,
-      ),
-      thresholds,
-    );
-
-    final overallKpi = {
+    final monthlyStatus = {
       'good': KpiStatus.good,
       'warning': KpiStatus.warning,
       'danger': KpiStatus.danger,
-    }[scoreObj.status]!;
-    final mainC = colors(overallKpi);
-    final overallLabel = {
+    }[mr?.status ?? 'warning']!;
+    final monthlyC = colors(monthlyStatus);
+    final monthlyLabel = {
       'good': 'Bueno',
       'warning': 'A mejorar',
       'danger': 'Bajo',
-    }[scoreObj.status]!;
+    }[mr?.status ?? 'warning']!;
 
-    // Estados por indicador
-    final stDpd = _statusDpd(dpdAvg);
-    final stDti = _statusLessIsBetter(dti, thresholds.debtToIncomeWarning);
-    final stUtil = _statusLessIsBetter(
-      utilization,
-      thresholds.utilizationWarning,
+    final histStatus = {
+      'good': KpiStatus.good,
+      'warning': KpiStatus.warning,
+      'danger': KpiStatus.danger,
+    }[lr?.status ?? 'warning']!;
+    final histC = colors(histStatus);
+    final histLabel = {
+      'good': 'Bueno',
+      'warning': 'A mejorar',
+      'danger': 'Bajo',
+    }[lr?.status ?? 'warning']!;
+
+    // Estados por indicador (mensuales)
+    final stDpd = _statusDpd(mf?.dpd ?? 0);
+    final stDti = _statusLessIsBetter(
+      mf?.debtToIncome ?? 0,
+      t.debtToIncomeWarning,
     );
-    final stSave = _statusMoreIsBetter(savingsRate, thresholds.savingsTarget);
+    final stUtil = _statusLessIsBetter(
+      mf?.utilization ?? 0,
+      t.utilizationWarning,
+    );
+    final stSave = _statusMoreIsBetter(mf?.savingsRate ?? 0, t.savingsTarget);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Puntaje educativo')),
@@ -169,36 +146,42 @@ class ScoreDetailPage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Card principal (colores según estado global)
+          // ===================== PUNTAJE MENSUAL (principal) =====================
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: mainC.bg,
-              border: Border.all(color: mainC.border),
+              color: monthlyC.bg,
+              border: Border.all(color: monthlyC.border),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Tu puntaje', style: TextStyle(color: mainC.accent)),
+                Text(
+                  'Tu puntaje (mes actual)',
+                  style: TextStyle(color: monthlyC.accent),
+                ),
                 const SizedBox(height: 6),
                 Text(
-                  scoreObj.score.toString(),
+                  (mr?.score ?? 0).toString(),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 64,
                     height: 1.0,
                     fontWeight: FontWeight.w700,
-                    color: mainC.accent,
+                    color: monthlyC.accent,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.check_circle, size: 18, color: mainC.accent),
+                    Icon(Icons.check_circle, size: 18, color: monthlyC.accent),
                     const SizedBox(width: 6),
-                    Text(overallLabel, style: TextStyle(color: mainC.accent)),
+                    Text(
+                      monthlyLabel,
+                      style: TextStyle(color: monthlyC.accent),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -209,8 +192,64 @@ class ScoreDetailPage extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+
+          // ===================== CARD: SCORE HISTÓRICO TOTAL =====================
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: histC.bg,
+              border: Border.all(color: histC.border),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.timeline_rounded),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Score histórico total',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.foreground,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Resumen considerando todo tu historial registrado.',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      (lr?.score ?? 0).toString(),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                        color: histC.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(histLabel, style: TextStyle(color: histC.accent)),
+                  ],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
 
+          // ===================== Desglose por indicador (mensual) =====================
           Text(
             'Desglose por indicador',
             style: Theme.of(context).textTheme.titleMedium,
@@ -219,9 +258,9 @@ class ScoreDetailPage extends StatelessWidget {
 
           _IndicatorCard(
             title: 'Días de atraso (DPD)',
-            valueTrailing: '$dpdAvg',
+            valueTrailing: '${mf?.dpd ?? 0}',
             description:
-                'Promedio de días de atraso en tus pagos.\nIdeal: 0 días.',
+                'Promedio de días de atraso en tus pagos. Ideal: 0 días.',
             weightPct: 35,
             status: stDpd,
           ),
@@ -229,9 +268,9 @@ class ScoreDetailPage extends StatelessWidget {
 
           _IndicatorCard(
             title: 'Deuda/Ingreso',
-            valueTrailing: '${dti.toStringAsFixed(0)}%',
+            valueTrailing: '${(mf?.debtToIncome ?? 0).toStringAsFixed(0)}%',
             description:
-                'Cuotas mensuales vs ingreso. Ideal: <${thresholds.debtToIncomeWarning.toStringAsFixed(0)}%.',
+                'Cuotas mensuales vs ingreso. Ideal: <${t.debtToIncomeWarning.toStringAsFixed(0)}%.',
             weightPct: 25,
             status: stDti,
           ),
@@ -239,9 +278,9 @@ class ScoreDetailPage extends StatelessWidget {
 
           _IndicatorCard(
             title: 'Utilización de crédito',
-            valueTrailing: '${utilization.toStringAsFixed(0)}%',
+            valueTrailing: '${(mf?.utilization ?? 0).toStringAsFixed(0)}%',
             description:
-                'Uso de línea disponible. Ideal: <${thresholds.utilizationWarning.toStringAsFixed(0)}%.',
+                'Uso de línea disponible. Ideal: <${t.utilizationWarning.toStringAsFixed(0)}%.',
             weightPct: 25,
             status: stUtil,
           ),
@@ -249,9 +288,9 @@ class ScoreDetailPage extends StatelessWidget {
 
           _IndicatorCard(
             title: 'Tasa de ahorro',
-            valueTrailing: '${savingsRate.toStringAsFixed(1)}%',
+            valueTrailing: '${(mf?.savingsRate ?? 0).toStringAsFixed(1)}%',
             description:
-                'Porcentaje que ahorras de tus ingresos. Ideal: ≥${thresholds.savingsTarget.toStringAsFixed(0)}%.',
+                'Porcentaje que ahorras de tus ingresos. Ideal: ≥${t.savingsTarget.toStringAsFixed(0)}%.',
             weightPct: 15,
             status: stSave,
           ),

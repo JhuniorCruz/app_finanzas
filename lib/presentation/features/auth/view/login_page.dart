@@ -249,49 +249,48 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Divider
-                      Row(
-                        children: const [
-                          Expanded(child: _Line()),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              'O continúa con',
-                              style: TextStyle(color: Color(0xFF64748B)),
-                            ),
-                          ),
-                          Expanded(child: _Line()),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
+                      // // Divider
+                      // Row(
+                      //   children: const [
+                      //     Expanded(child: _Line()),
+                      //     Padding(
+                      //       padding: EdgeInsets.symmetric(horizontal: 8),
+                      //       child: Text(
+                      //         'O continúa con',
+                      //         style: TextStyle(color: Color(0xFF64748B)),
+                      //       ),
+                      //     ),
+                      //     Expanded(child: _Line()),
+                      //   ],
+                      // ),
+                      // const SizedBox(height: 12),
 
-                      // Social
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: isLoading ? null : () {}, // TODO OAuth
-                              icon: const Icon(Icons.g_translate),
-                              label: const Text('Google'),
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(48),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: isLoading ? null : () {}, // TODO OAuth
-                              icon: const Icon(Icons.apple),
-                              label: const Text('Apple'),
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: const Size.fromHeight(48),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
+                      // // Social
+                      // Row(
+                      //   children: [
+                      //     Expanded(
+                      //       child: OutlinedButton.icon(
+                      //         onPressed: isLoading ? null : () {}, // TODO OAuth
+                      //         icon: const Icon(Icons.g_translate),
+                      //         label: const Text('Google'),
+                      //         style: OutlinedButton.styleFrom(
+                      //           minimumSize: const Size.fromHeight(48),
+                      //         ),
+                      //       ),
+                      //     ),
+                      //     const SizedBox(width: 12),
+                      //     Expanded(
+                      //       child: OutlinedButton.icon(
+                      //         onPressed: isLoading ? null : () {}, // TODO OAuth
+                      //         icon: const Icon(Icons.apple),
+                      //         label: const Text('Apple'),
+                      //         style: OutlinedButton.styleFrom(
+                      //           minimumSize: const Size.fromHeight(48),
+                      //         ),
+                      //       ),
+                      //     ),
+                      //   ],
+                      // ),
                       const SizedBox(height: 16),
                       // Legal
                       Text.rich(
@@ -387,6 +386,7 @@ class _HeaderTexts extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _Line extends StatelessWidget {
   const _Line();
 

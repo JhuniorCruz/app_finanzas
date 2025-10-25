@@ -115,7 +115,7 @@ ThemeData buildAppTheme() {
     // Botones globales
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primary,
+        backgroundColor: const Color.fromRGBO(48, 50, 191, 1),
         foregroundColor: Colors.white,
         elevation: 0,
         textStyle: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
