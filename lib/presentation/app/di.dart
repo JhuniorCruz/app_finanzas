@@ -92,6 +92,23 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
         removeTx: removeTx,
       ),
     ),
-    ChangeNotifierProvider(create: (_) => ScoreController(listTx, listDebts)),
+    ChangeNotifierProxyProvider<SettingsController, ScoreController>(
+      create: (_) => ScoreController(listTx, listDebts),
+      update: (_, settings, score) {
+        final controller = score ?? ScoreController(listTx, listDebts);
+        final thresholds = settings.thresholds;
+        final shouldReload =
+            controller.monthlyFactors == null ||
+            controller.thresholds.debtToIncomeWarning !=
+                thresholds.debtToIncomeWarning ||
+            controller.thresholds.utilizationWarning !=
+                thresholds.utilizationWarning ||
+            controller.thresholds.savingsTarget != thresholds.savingsTarget;
+        if (shouldReload && !controller.loading) {
+          controller.load(thresholds);
+        }
+        return controller;
+      },
+    ),
   ];
 }

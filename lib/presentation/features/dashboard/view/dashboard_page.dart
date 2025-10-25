@@ -7,7 +7,8 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/utils/scoring.dart' show Thresholds; // <- para el tipo
+//import '../../../../core/utils/scoring.dart' show Thresholds; // <- para el tipo
+import '../../../../core/utils/scoring.dart' show ScoreResult;
 import '../../../widgets/kpi_card.dart' as k;
 
 import '../../score/view/score_detail_page.dart';
@@ -40,7 +41,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
       final settings = context.read<SettingsController>();
       // ScoreController.load([thresholds])
-      await context.read<ScoreController>().load(settings.thresholds);
+      //await context.read<ScoreController>().load(settings.thresholds);
+      final score = context.read<ScoreController>();
+      if (!score.loading && score.monthlyResult == null) {
+        await score.load(settings.thresholds);
+      }
     });
   }
 
@@ -73,7 +78,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     // ====== Indicadores y puntaje desde ScoreController (MENSUAL) ======
-    final thresholds = scoreVm.thresholds;
+    //final thresholds = scoreVm.thresholds;
     final mf = scoreVm.monthlyFactors;
     final mr = scoreVm.monthlyResult;
 
@@ -187,19 +192,22 @@ class _DashboardPageState extends State<DashboardPage> {
               k.KpiCard(
                 title: '% Ahorro',
                 value: '${savingsRate.toStringAsFixed(1)}%',
-                status: _statusForSavings(savingsRate, thresholds),
+                //status: _statusForSavings(savingsRate, thresholds),
+                status: _statusFromFactor(mr, 'savings'),
                 icon: Icons.savings_rounded,
               ),
               k.KpiCard(
                 title: 'Deuda/Ingreso',
                 value: '${dti.toStringAsFixed(0)}%',
-                status: _statusForDTI(dti, thresholds),
+                //status: _statusForDTI(dti, thresholds),
+                status: _statusFromFactor(mr, 'debtToIncome'),
                 icon: Icons.trending_down_rounded,
               ),
               k.KpiCard(
                 title: 'Utilización',
                 value: '${utilization.toStringAsFixed(0)}%',
-                status: _statusForUtil(utilization, thresholds),
+                //status: _statusForUtil(utilization, thresholds),
+                status: _statusFromFactor(mr, 'utilization'),
                 icon: Icons.credit_card_rounded,
               ),
               k.KpiCard(
@@ -238,21 +246,14 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   // ----- Helpers de estado para KPIs -----
-  k.KpiStatus _statusForSavings(double savings, Thresholds t) {
-    // OK si alcanzas la meta; de lo contrario warning
-    return savings >= t.savingsTarget ? k.KpiStatus.good : k.KpiStatus.warning;
-  }
-
-  k.KpiStatus _statusForDTI(double dti, Thresholds t) {
-    // OK si tu DTI está por debajo del umbral
-    return dti <= t.debtToIncomeWarning
-        ? k.KpiStatus.good
-        : k.KpiStatus.warning;
-  }
-
-  k.KpiStatus _statusForUtil(double util, Thresholds t) {
-    // Verde abajo del umbral, rojo si lo sobrepasa (tarjetas suelen ser crítico)
-    return util <= t.utilizationWarning ? k.KpiStatus.good : k.KpiStatus.danger;
+  k.KpiStatus _statusFromFactor(ScoreResult? result, String key) {
+    final status = result?.factors[key]?.status ?? 'warning';
+    return {
+          'good': k.KpiStatus.good,
+          'warning': k.KpiStatus.warning,
+          'danger': k.KpiStatus.danger,
+        }[status] ??
+        k.KpiStatus.warning;
   }
 }
 

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/utils/scoring.dart' show Thresholds;
+//import '../../../../core/utils/scoring.dart' show Thresholds;
 import '../../score/controller/score_controller.dart';
 import '../../settings/controller/settings_controller.dart';
 import 'score_recommendations_page.dart';
@@ -34,22 +34,29 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   }
 
   // ---------- Helpers de estado visual ----------
-  KpiStatus _statusDpd(int dpd) {
-    if (dpd <= 0) return KpiStatus.good;
-    if (dpd <= 5) return KpiStatus.warning;
-    return KpiStatus.danger;
-  }
+  // KpiStatus _statusDpd(int dpd) {
+  //   if (dpd <= 0) return KpiStatus.good;
+  //   if (dpd <= 5) return KpiStatus.warning;
+  //   return KpiStatus.danger;
+  // }
 
-  KpiStatus _statusLessIsBetter(double valuePct, double warnThreshold) {
-    if (valuePct <= warnThreshold) return KpiStatus.good;
-    if (valuePct <= warnThreshold + 10) return KpiStatus.warning;
-    return KpiStatus.danger;
-  }
+  // KpiStatus _statusLessIsBetter(double valuePct, double warnThreshold) {
+  //   if (valuePct <= warnThreshold) return KpiStatus.good;
+  //   if (valuePct <= warnThreshold + 10) return KpiStatus.warning;
+  //   return KpiStatus.danger;
+  // }
 
-  KpiStatus _statusMoreIsBetter(double valuePct, double target) {
-    if (valuePct >= target) return KpiStatus.good;
-    if (valuePct >= target * 0.6) return KpiStatus.warning;
-    return KpiStatus.danger;
+  // KpiStatus _statusMoreIsBetter(double valuePct, double target) {
+  //   if (valuePct >= target) return KpiStatus.good;
+  //   if (valuePct >= target * 0.6) return KpiStatus.warning;
+  //   return KpiStatus.danger;
+  KpiStatus _statusFrom(String? status) {
+    return {
+          'good': KpiStatus.good,
+          'warning': KpiStatus.warning,
+          'danger': KpiStatus.danger,
+        }[status ?? 'warning'] ??
+        KpiStatus.warning;
   }
 
   ({Color bg, Color border, Color accent}) colors(KpiStatus s) {
@@ -79,14 +86,16 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   Widget build(BuildContext context) {
     final scoreVm = context.watch<ScoreController>();
 
-    // Umbrales elegidos por el usuario (guardados en Settings/Profile)
-    final Thresholds t = scoreVm.thresholds;
+    // // Umbrales elegidos por el usuario (guardados en Settings/Profile)
+    //final Thresholds t = scoreVm.thresholds;
+    final t = scoreVm.thresholds;
 
     // Factores y resultados MENSUALES (los que se ven en el dashboard)
     final mf = scoreVm.monthlyFactors;
     final mr = scoreVm.monthlyResult;
 
     // Factores y resultado HISTÓRICO (opcional, puede ser null si no lo calculas)
+    // ignore: unused_local_variable
     final lf = scoreVm.lifetimeFactors;
     final lr = scoreVm.lifetimeResult;
 
@@ -115,16 +124,21 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     }[lr?.status ?? 'warning']!;
 
     // Estados por indicador (mensuales)
-    final stDpd = _statusDpd(mf?.dpd ?? 0);
-    final stDti = _statusLessIsBetter(
-      mf?.debtToIncome ?? 0,
-      t.debtToIncomeWarning,
-    );
-    final stUtil = _statusLessIsBetter(
-      mf?.utilization ?? 0,
-      t.utilizationWarning,
-    );
-    final stSave = _statusMoreIsBetter(mf?.savingsRate ?? 0, t.savingsTarget);
+    // final stDpd = _statusDpd(mf?.dpd ?? 0);
+    // final stDti = _statusLessIsBetter(
+    //   mf?.debtToIncome ?? 0,
+    //   t.debtToIncomeWarning,
+    // );
+    // final stUtil = _statusLessIsBetter(
+    //   mf?.utilization ?? 0,
+    //   t.utilizationWarning,
+    // );
+    // final stSave = _statusMoreIsBetter(mf?.savingsRate ?? 0, t.savingsTarget);
+    final factors = mr?.factors;
+    final stDpd = _statusFrom(factors?['dpd']?.status);
+    final stDti = _statusFrom(factors?['debtToIncome']?.status);
+    final stUtil = _statusFrom(factors?['utilization']?.status);
+    final stSave = _statusFrom(factors?['savings']?.status);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Puntaje educativo')),
