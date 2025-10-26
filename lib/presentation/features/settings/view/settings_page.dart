@@ -21,11 +21,35 @@ class _SettingsPageState extends State<SettingsPage> {
   double _dti = 40;
   double _util = 50;
   bool _reminders = false; // estado local (UI)
+  SettingsController? _settings;
+
+  void _applyProfile(UserProfile? p) {
+    if (p == null) return;
+    setState(() {
+      _savings = p.savingsTarget;
+      _dti = p.debtToIncomeThreshold;
+      _util = p.utilizationThreshold;
+      _reminders = p.reminders;
+    });
+  }
+
+  void _onSettingsChanged() {
+    final p = _settings?.profile;
+    if (p == null) return;
+    if (p.savingsTarget != _savings ||
+        p.debtToIncomeThreshold != _dti ||
+        p.utilizationThreshold != _util ||
+        p.reminders != _reminders) {
+      _applyProfile(p);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    final p = context.read<SettingsController>().profile;
+    _settings = context.read<SettingsController>();
+    _settings?.addListener(_onSettingsChanged);
+    final p = _settings?.profile;
     // si no hay perfil aún, usa defaults razonables
     _savings = p?.savingsTarget ?? 10;
     _dti = p?.debtToIncomeThreshold ?? 40;
@@ -34,7 +58,23 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   @override
+  void dispose() {
+    _settings?.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final settingsVm = context.watch<SettingsController>();
+
+    // Loader inicial: mientras carga y aún no hay perfil
+    if (settingsVm.busy && settingsVm.profile == null) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Ajustes')),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ajustes'),

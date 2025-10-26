@@ -20,7 +20,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passNode = FocusNode();
 
   bool _showPass = false;
-  bool _remember = false;
+  bool _remember = true; // marcado por defecto
   String? _generalError;
 
   @override

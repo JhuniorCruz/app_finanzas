@@ -2,108 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
-// import '../../../../core/utils/formatters.dart'; // getDaysPastDue
-// import '../../transactions/controller/transactions_controller.dart';
-// import '../../debts/controller/debts_controller.dart';
-// import '../../settings/controller/settings_controller.dart';
 import '../../../../core/utils/scoring.dart';
 import '../../score/controller/score_controller.dart';
 
 class ScoreRecommendationsPage extends StatelessWidget {
   const ScoreRecommendationsPage({super.key});
 
-  // double _pct(num nume, num deno) {
-  //   if (deno <= 0) return 0;
-  //   final v = (nume / deno) * 100.0;
-  //   if (v.isNaN || v.isInfinite) return 0;
-  //   return v.clamp(0, 999).toDouble();
-  // }
-
   @override
   Widget build(BuildContext context) {
-    // final txs = context.watch<TransactionsController>().items;
-    // final debts = context.watch<DebtsController>().items;
-    // final profile = context.watch<SettingsController>().profile!;
-
-    // // --- métricas actuales (mismo criterio que en detalle) ---
-    // final now = DateTime.now();
-    // final monthTx = txs
-    //     .where((t) => t.date.month == now.month && t.date.year == now.year)
-    //     .toList();
-
-    // final double income = monthTx
-    //     .where((t) => t.type == 'income')
-    //     .fold<double>(0, (s, t) => s + t.amount);
-
-    // final double expenses = monthTx
-    //     .where((t) => t.type == 'expense')
-    //     .fold<double>(0, (s, t) => s + t.amount);
-
-    // final debtsActive = debts.where((d) => d.paid == false).toList();
-
-    // final int dpdAvg = debtsActive.isEmpty
-    //     ? 0
-    //     : (debtsActive
-    //                   .map<int>((d) => getDaysPastDue(d.dueDate))
-    //                   .reduce((a, b) => a + b) /
-    //               debtsActive.length)
-    //           .round();
-
-    // final double installments = debtsActive.fold<double>(
-    //   0,
-    //   (s, d) => s + d.amount,
-    // );
-
-    // final dti = _pct(installments, income);
-
-    // double utilization = 0;
-    // final withLimit = debtsActive.where(
-    //   (d) => d.creditLimit != null && d.creditLimit! > 0,
-    // );
-    // if (withLimit.isNotEmpty) {
-    //   final used = withLimit.fold<double>(0, (s, d) => s + d.totalDebt);
-    //   final limit = withLimit.fold<double>(
-    //     0,
-    //     (s, d) => s + (d.creditLimit ?? 0),
-    //   );
-    //   utilization = _pct(used, limit);
-    // }
-
-    // final savingsRate = _pct(income - expenses, income);
     final scoreVm = context.watch<ScoreController>();
     final result = scoreVm.monthlyResult;
     final thresholds = scoreVm.thresholds;
 
-    // // --- tips personalizados ---
-    // final List<_Tip> tips = [];
-    // if (dpdAvg > 0) {
-    //   tips.add(
-    //     const _Tip(
-    //       'Tienes pagos atrasados. Prioriza regularizar tus deudas para evitar más intereses y mejorar tu historial.',
-    //     ),
-    //   );
-    // }
-    // if (utilization > profile.utilizationThreshold) {
-    //   tips.add(
-    //     _Tip(
-    //       'Utilización > ${profile.utilizationThreshold.toStringAsFixed(0)}%. Intenta pagar más del mínimo este mes para reducir tu deuda.',
-    //     ),
-    //   );
-    // }
-    // if (dti > profile.debtToIncomeThreshold) {
-    //   tips.add(
-    //     const _Tip(
-    //       'Tus cuotas mensuales son altas respecto a tu ingreso. Evita asumir nuevas deudas hasta bajar tu Deuda/Ingreso.',
-    //     ),
-    //   );
-    // }
-    // if (savingsRate < profile.savingsTarget) {
-    //   tips.add(
-    //     _Tip(
-    //       'Aumenta gradualmente tu tasa de ahorro (meta: ${profile.savingsTarget.toStringAsFixed(0)}%). Revisa gastos prescindibles.',
-    //     ),
-    //   );
-    // }
     final recommendations = result == null
         ? const <String>[]
         : generateRecommendations(result, thresholds);
@@ -119,7 +29,6 @@ class ScoreRecommendationsPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          //if (tips.isEmpty)
           if (scoreVm.loading)
             const Center(child: CircularProgressIndicator())
           else if (result == null)
@@ -129,7 +38,6 @@ class ScoreRecommendationsPage extends StatelessWidget {
               ),
             )
           else
-            // ...tips.map(_tipCard),
             ...recommendations.map((text) => _tipCard(_Tip(text))),
 
           const SizedBox(height: 16),

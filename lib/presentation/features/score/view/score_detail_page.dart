@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart';
-//import '../../../../core/utils/scoring.dart' show Thresholds;
 import '../../score/controller/score_controller.dart';
 import '../../settings/controller/settings_controller.dart';
 import 'score_recommendations_page.dart';
@@ -34,22 +33,6 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   }
 
   // ---------- Helpers de estado visual ----------
-  // KpiStatus _statusDpd(int dpd) {
-  //   if (dpd <= 0) return KpiStatus.good;
-  //   if (dpd <= 5) return KpiStatus.warning;
-  //   return KpiStatus.danger;
-  // }
-
-  // KpiStatus _statusLessIsBetter(double valuePct, double warnThreshold) {
-  //   if (valuePct <= warnThreshold) return KpiStatus.good;
-  //   if (valuePct <= warnThreshold + 10) return KpiStatus.warning;
-  //   return KpiStatus.danger;
-  // }
-
-  // KpiStatus _statusMoreIsBetter(double valuePct, double target) {
-  //   if (valuePct >= target) return KpiStatus.good;
-  //   if (valuePct >= target * 0.6) return KpiStatus.warning;
-  //   return KpiStatus.danger;
   KpiStatus _statusFrom(String? status) {
     return {
           'good': KpiStatus.good,
@@ -95,21 +78,40 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     final mr = scoreVm.monthlyResult;
 
     // Factores y resultado HISTÓRICO (opcional, puede ser null si no lo calculas)
-    // ignore: unused_local_variable
-    final lf = scoreVm.lifetimeFactors;
     final lr = scoreVm.lifetimeResult;
+
+    if (scoreVm.loading && mr == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Puntaje educativo')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (mr == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Puntaje educativo')),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: const [
+            _InfoBanner(),
+            SizedBox(height: 12),
+            _EmptyStateCard(),
+          ],
+        ),
+      );
+    }
 
     final monthlyStatus = {
       'good': KpiStatus.good,
       'warning': KpiStatus.warning,
       'danger': KpiStatus.danger,
-    }[mr?.status ?? 'warning']!;
+    }[mr.status]!;
     final monthlyC = colors(monthlyStatus);
     final monthlyLabel = {
       'good': 'Bueno',
       'warning': 'A mejorar',
       'danger': 'Bajo',
-    }[mr?.status ?? 'warning']!;
+    }[mr.status]!;
 
     final histStatus = {
       'good': KpiStatus.good,
@@ -123,41 +125,18 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       'danger': 'Bajo',
     }[lr?.status ?? 'warning']!;
 
-    // Estados por indicador (mensuales)
-    // final stDpd = _statusDpd(mf?.dpd ?? 0);
-    // final stDti = _statusLessIsBetter(
-    //   mf?.debtToIncome ?? 0,
-    //   t.debtToIncomeWarning,
-    // );
-    // final stUtil = _statusLessIsBetter(
-    //   mf?.utilization ?? 0,
-    //   t.utilizationWarning,
-    // );
-    // final stSave = _statusMoreIsBetter(mf?.savingsRate ?? 0, t.savingsTarget);
-    final factors = mr?.factors;
-    final stDpd = _statusFrom(factors?['dpd']?.status);
-    final stDti = _statusFrom(factors?['debtToIncome']?.status);
-    final stUtil = _statusFrom(factors?['utilization']?.status);
-    final stSave = _statusFrom(factors?['savings']?.status);
-
+    final factors = mr.factors;
+    final stDpd = _statusFrom(factors['dpd']?.status);
+    final stDti = _statusFrom(factors['debtToIncome']?.status);
+    final stUtil = _statusFrom(factors['utilization']?.status);
+    final stSave = _statusFrom(factors['savings']?.status);
     return Scaffold(
       appBar: AppBar(title: const Text('Puntaje educativo')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // Banner aclaratorio
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF7E8),
-              border: Border.all(color: const Color(0xFFFFE3A3)),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              'Este puntaje es educativo, no oficial. Las entidades financieras usan sus propios modelos.',
-              style: TextStyle(color: Color(0xFFB45309)),
-            ),
-          ),
+          const _InfoBanner(),
           const SizedBox(height: 12),
 
           // ===================== PUNTAJE MENSUAL (principal) =====================
@@ -177,7 +156,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  (mr?.score ?? 0).toString(),
+                  mr.score.toString(),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 64,
@@ -345,6 +324,59 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
 // ================== Widgets auxiliares ==================
 
 enum KpiStatus { good, warning, danger }
+
+class _InfoBanner extends StatelessWidget {
+  const _InfoBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7E8),
+        border: Border.all(color: const Color(0xFFFFE3A3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Text(
+        'Este puntaje es educativo, no oficial. Las entidades financieras usan sus propios modelos.',
+        style: TextStyle(color: Color(0xFFB45309)),
+      ),
+    );
+  }
+}
+
+class _EmptyStateCard extends StatelessWidget {
+  const _EmptyStateCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text(
+            'Aún no podemos calcular tu puntaje',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: AppColors.foreground,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Agrega tus movimientos y deudas recientes para generar recomendaciones personalizadas.',
+            style: TextStyle(color: Color(0xFF64748B)),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _IndicatorCard extends StatelessWidget {
   final String title;

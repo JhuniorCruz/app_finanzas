@@ -81,8 +81,16 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
       create: (_) => DebtsController(listDebts, addDebtUC, markPaidUC, addTx),
     ),
     ChangeNotifierProvider(create: (_) => DashboardController(listTx)),
-    ChangeNotifierProvider(
+    // Settings depende de la sesión: carga perfil solo si está autenticado
+    ChangeNotifierProxyProvider<AuthController, SettingsController>(
       create: (_) => SettingsController(getProfile, updateProfile),
+      update: (_, auth, settings) {
+        final controller = settings ?? SettingsController(getProfile, updateProfile);
+        if (auth.isAuthenticated && !controller.busy && controller.profile == null) {
+          controller.load();
+        }
+        return controller;
+      },
     ),
     ChangeNotifierProvider(create: (_) => SimulatorController(listTx)),
     ChangeNotifierProvider(
@@ -104,7 +112,7 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
             controller.thresholds.utilizationWarning !=
                 thresholds.utilizationWarning ||
             controller.thresholds.savingsTarget != thresholds.savingsTarget;
-        if (shouldReload && !controller.loading) {
+        if (shouldReload) {
           controller.load(thresholds);
         }
         return controller;

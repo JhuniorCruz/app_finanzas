@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/theme/app_theme.dart';
-//import '../../../../core/utils/scoring.dart' show Thresholds; // <- para el tipo
 import '../../../../core/utils/scoring.dart' show ScoreResult;
 import '../../../widgets/kpi_card.dart' as k;
 
@@ -41,7 +40,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
       final settings = context.read<SettingsController>();
       // ScoreController.load([thresholds])
-      //await context.read<ScoreController>().load(settings.thresholds);
       final score = context.read<ScoreController>();
       if (!score.loading && score.monthlyResult == null) {
         await score.load(settings.thresholds);
@@ -52,6 +50,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     final txVm = context.watch<TransactionsController>();
+    final debtsVm = context.watch<DebtsController>();
     final scoreVm = context.watch<ScoreController>();
 
     // ====== Cifras del MES (solo para el header) ======
@@ -96,6 +95,31 @@ class _DashboardPageState extends State<DashboardPage> {
         }[status] ??
         k.KpiStatus.warning;
 
+    final isLoading =
+        txVm.busy ||
+        debtsVm.loading ||
+        (scoreVm.loading && scoreVm.monthlyResult == null);
+
+    if (isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('PagoScore'),
+          backgroundColor: Colors.white,
+          foregroundColor: Color(0xFF0F172A),
+          elevation: 0,
+          centerTitle: false,
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Inter',
+            color: Color.fromRGBO(48, 50, 191, 1),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('PagoScore'),
@@ -127,7 +151,7 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Expanded(
                 child: SizedBox(
-                  height: 56,
+                  height: 70,
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.accent,
@@ -145,7 +169,7 @@ class _DashboardPageState extends State<DashboardPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: SizedBox(
-                  height: 56,
+                  height: 70,
                   child: OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.foreground,
@@ -185,28 +209,26 @@ class _DashboardPageState extends State<DashboardPage> {
             crossAxisCount: 2,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 1.6,
+            // Más alto para evitar overflows en dispositivos chicos
+            childAspectRatio: 1.35,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: [
               k.KpiCard(
                 title: '% Ahorro',
                 value: '${savingsRate.toStringAsFixed(1)}%',
-                //status: _statusForSavings(savingsRate, thresholds),
                 status: _statusFromFactor(mr, 'savings'),
                 icon: Icons.savings_rounded,
               ),
               k.KpiCard(
                 title: 'Deuda/Ingreso',
                 value: '${dti.toStringAsFixed(0)}%',
-                //status: _statusForDTI(dti, thresholds),
                 status: _statusFromFactor(mr, 'debtToIncome'),
                 icon: Icons.trending_down_rounded,
               ),
               k.KpiCard(
                 title: 'Utilización',
                 value: '${utilization.toStringAsFixed(0)}%',
-                //status: _statusForUtil(utilization, thresholds),
                 status: _statusFromFactor(mr, 'utilization'),
                 icon: Icons.credit_card_rounded,
               ),

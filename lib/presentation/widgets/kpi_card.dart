@@ -59,7 +59,7 @@ class KpiCard extends StatelessWidget {
     final borderRadius = BorderRadius.circular(16);
 
     final card = Container(
-      constraints: const BoxConstraints(minHeight: 86),
+      constraints: const BoxConstraints(minHeight: 92),
       decoration: BoxDecoration(
         gradient: _bg(status),
         borderRadius: borderRadius,
@@ -85,6 +85,8 @@ class KpiCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: const Color(0xFF64748B),
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 6),
                 FittedBox(
