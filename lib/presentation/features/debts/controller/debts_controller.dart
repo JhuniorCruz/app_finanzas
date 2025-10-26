@@ -10,6 +10,7 @@ import '../../../../application/usecases/add_transaction.dart' as tx_uc;
 
 import '../../../../domain/entities/debt.dart';
 import '../../../../domain/entities/transaction.dart' as dom;
+import '../../../../services/notifications_service.dart';
 
 class DebtsController extends ChangeNotifier {
   final ListDebts _list;
@@ -28,12 +29,23 @@ class DebtsController extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
+  bool _remindersEnabled = false;
+  bool get remindersEnabled => _remindersEnabled;
+
+  void setRemindersEnabled(bool v) {
+    if (_remindersEnabled == v) return;
+    _remindersEnabled = v;
+    // Sincroniza en background para no bloquear UI
+    Future.microtask(() => syncNotifications());
+  }
+
   // ---------- CARGA ----------
   Future<void> load() async {
     _setLoading(true);
     try {
       _items = await _list();
       _setError(null);
+      await syncNotifications();
     } catch (e) {
       _setError(e.toString());
     } finally {
@@ -47,6 +59,14 @@ class DebtsController extends ChangeNotifier {
     try {
       await _add(d);
       await load();
+      // Programar notificaciones para la nueva deuda
+      if (!d.paid && _remindersEnabled) {
+        await NotificationsService.instance.scheduleForDebt(
+          debtId: d.id,
+          title: 'Pago de ${d.title}',
+          dueDate: d.dueDate,
+        );
+      }
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
@@ -60,6 +80,8 @@ class DebtsController extends ChangeNotifier {
     try {
       await _markPaid(id);
       await load();
+      // Cancelar notificaciones para la deuda pagada
+      await NotificationsService.instance.cancelForDebt(id);
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
@@ -100,6 +122,8 @@ class DebtsController extends ChangeNotifier {
 
       // 3) Refrescar
       await load();
+      // Cancelar notificaciones (ya se pagó)
+      await NotificationsService.instance.cancelForDebt(d.id);
     } catch (e) {
       _setError(e.toString());
       _setLoading(false);
@@ -116,5 +140,23 @@ class DebtsController extends ChangeNotifier {
   void _setError(String? msg) {
     _error = msg;
     notifyListeners();
+  }
+
+  /// Sincroniza notificaciones según preferencia actual y deudas activas
+  Future<void> syncNotifications() async {
+    final active = _items.where((e) => !e.paid);
+    if (_remindersEnabled) {
+      for (final d in active) {
+        await NotificationsService.instance.scheduleForDebt(
+          debtId: d.id,
+          title: 'Pago de ${d.title}',
+          dueDate: d.dueDate,
+        );
+      }
+    } else {
+      for (final d in active) {
+        await NotificationsService.instance.cancelForDebt(d.id);
+      }
+    }
   }
 }

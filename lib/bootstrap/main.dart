@@ -9,6 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:app_finanzas/core/theme/app_theme.dart';
 import 'package:app_finanzas/presentation/app/di.dart';
 import 'package:app_finanzas/presentation/app/router.dart';
+import 'package:app_finanzas/services/notifications_service.dart';
 
 // Rutas con nombre (pantallas modales desde el dashboard)
 import 'package:app_finanzas/presentation/features/transactions/view/add_income_page.dart';
@@ -48,6 +49,9 @@ Future<void> main() async {
   // 3) DI (providers)
   final prefs = await SharedPreferences.getInstance();
   final providers = await buildProviders(prefs);
+
+  // 3.1) Inicializa notificaciones locales
+  await NotificationsService.instance.init();
 
   // 4) Lanza la app
   runZonedGuarded(

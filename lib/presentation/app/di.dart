@@ -77,8 +77,15 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
       create: (_) => AuthController(authRepo)..checkSession(),
     ),
 
-    ChangeNotifierProvider(
+    ChangeNotifierProxyProvider<SettingsController, DebtsController>(
       create: (_) => DebtsController(listDebts, addDebtUC, markPaidUC, addTx),
+      update: (_, settings, debts) {
+        final controller =
+            debts ?? DebtsController(listDebts, addDebtUC, markPaidUC, addTx);
+        final reminders = settings.profile?.reminders ?? false;
+        controller.setRemindersEnabled(reminders);
+        return controller;
+      },
     ),
     ChangeNotifierProvider(create: (_) => DashboardController(listTx)),
     // Settings depende de la sesión: carga perfil solo si está autenticado
