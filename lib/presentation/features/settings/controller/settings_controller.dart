@@ -56,4 +56,12 @@ class SettingsController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Limpia el perfil cargado (por ejemplo, al cerrar sesión).
+  void reset() {
+    if (_profile != null) {
+      _profile = null;
+      notifyListeners();
+    }
+  }
 }

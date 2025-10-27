@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/theme/app_theme.dart'; // AppColors
@@ -345,6 +346,17 @@ class _LoginPageState extends State<LoginPage> {
                           ],
                         ),
                         textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      Center(
+                        child: Text(
+                          'PagoScore',
+                          style: GoogleFonts.dancingScript(
+                            fontSize: 48,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ],
                   ),

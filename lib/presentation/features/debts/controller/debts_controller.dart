@@ -29,6 +29,9 @@ class DebtsController extends ChangeNotifier {
   String? _error;
   String? get error => _error;
 
+  int _version = 0;
+  int get version => _version;
+
   bool _remindersEnabled = false;
   bool get remindersEnabled => _remindersEnabled;
 
@@ -46,6 +49,7 @@ class DebtsController extends ChangeNotifier {
       _items = await _list();
       _setError(null);
       await syncNotifications();
+      _version++;
     } catch (e) {
       _setError(e.toString());
     } finally {

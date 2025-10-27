@@ -19,6 +19,9 @@ class TransactionsController extends ChangeNotifier {
   bool _busy = false;
   bool get busy => _busy;
 
+  int _version = 0;
+  int get version => _version;
+
   List<FinanceTx> _items = [];
   List<FinanceTx> get items => _items;
 
@@ -26,6 +29,7 @@ class TransactionsController extends ChangeNotifier {
     _busy = true;
     notifyListeners();
     _items = await listTx();
+    _version++;
     _busy = false;
     notifyListeners();
   }

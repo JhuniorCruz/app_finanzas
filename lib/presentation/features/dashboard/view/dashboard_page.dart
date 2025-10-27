@@ -33,7 +33,7 @@ class _DashboardPageState extends State<DashboardPage> {
     _loaded = true;
 
     // Cargamos datos y recalculamos el score con los umbrales del usuario
-    Future.microtask(() async {
+    Future.microtask(() {
       if (!mounted) return;
       context.read<TransactionsController>().load();
       context.read<DebtsController>().load();
@@ -42,7 +42,7 @@ class _DashboardPageState extends State<DashboardPage> {
       // ScoreController.load([thresholds])
       final score = context.read<ScoreController>();
       if (!score.loading && score.monthlyResult == null) {
-        await score.load(settings.thresholds);
+        score.load(thresholds: settings.thresholds);
       }
     });
   }

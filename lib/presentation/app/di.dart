@@ -77,6 +77,20 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
       create: (_) => AuthController(authRepo)..checkSession(),
     ),
 
+    // Settings depende de la sesión: carga perfil solo si está autenticado
+    ChangeNotifierProxyProvider<AuthController, SettingsController>(
+      create: (_) => SettingsController(getProfile.call, updateProfile.call),
+      update: (_, auth, settings) {
+        final controller =
+            settings ?? SettingsController(getProfile.call, updateProfile.call);
+        if (!auth.isAuthenticated) {
+          controller.reset();
+        } else if (!controller.busy && controller.profile == null) {
+          controller.load();
+        }
+        return controller;
+      },
+    ),
     ChangeNotifierProxyProvider<SettingsController, DebtsController>(
       create: (_) => DebtsController(listDebts, addDebtUC, markPaidUC, addTx),
       update: (_, settings, debts) {
@@ -88,17 +102,6 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
       },
     ),
     ChangeNotifierProvider(create: (_) => DashboardController(listTx)),
-    // Settings depende de la sesión: carga perfil solo si está autenticado
-    ChangeNotifierProxyProvider<AuthController, SettingsController>(
-      create: (_) => SettingsController(getProfile, updateProfile),
-      update: (_, auth, settings) {
-        final controller = settings ?? SettingsController(getProfile, updateProfile);
-        if (auth.isAuthenticated && !controller.busy && controller.profile == null) {
-          controller.load();
-        }
-        return controller;
-      },
-    ),
     ChangeNotifierProvider(create: (_) => SimulatorController(listTx)),
     ChangeNotifierProvider(
       create: (_) => TransactionsController(
@@ -107,20 +110,31 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
         removeTx: removeTx,
       ),
     ),
-    ChangeNotifierProxyProvider<SettingsController, ScoreController>(
+    ChangeNotifierProxyProvider3<SettingsController, TransactionsController,
+        DebtsController, ScoreController>(
       create: (_) => ScoreController(listTx, listDebts),
-      update: (_, settings, score) {
+      update: (_, settings, txVm, debtsVm, score) {
         final controller = score ?? ScoreController(listTx, listDebts);
         final thresholds = settings.thresholds;
-        final shouldReload =
-            controller.monthlyFactors == null ||
+
+        final thresholdsChanged =
             controller.thresholds.debtToIncomeWarning !=
                 thresholds.debtToIncomeWarning ||
             controller.thresholds.utilizationWarning !=
                 thresholds.utilizationWarning ||
             controller.thresholds.savingsTarget != thresholds.savingsTarget;
-        if (shouldReload) {
-          controller.load(thresholds);
+
+        final dataChanged =
+            controller.monthlyFactors == null ||
+            controller.lastSyncedTxVersion != txVm.version ||
+            controller.lastSyncedDebtVersion != debtsVm.version;
+
+        if (thresholdsChanged || dataChanged) {
+          controller.load(
+            thresholds: thresholds,
+            txVersion: txVm.version,
+            debtVersion: debtsVm.version,
+          );
         }
         return controller;
       },

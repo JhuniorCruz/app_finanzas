@@ -2,7 +2,7 @@
     <!-- Android 13+ (SDK 33) requiere permiso para mostrar notificaciones -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
-        android:label="app_finanzas"
+        android:label="PagoScore"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

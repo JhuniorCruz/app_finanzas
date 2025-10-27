@@ -23,13 +23,11 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     // Si alguien entró directo a esta pantalla, asegura que el score esté cargado
     if (_kickedLoad) return;
     _kickedLoad = true;
-    Future.microtask(() async {
-      final scoreVm = context.read<ScoreController>();
-      if (scoreVm.monthlyResult == null) {
-        final settings = context.read<SettingsController>();
-        await scoreVm.load(settings.thresholds);
-      }
-    });
+    final scoreVm = context.read<ScoreController>();
+    if (scoreVm.monthlyResult == null) {
+      final settings = context.read<SettingsController>();
+      scoreVm.load(thresholds: settings.thresholds);
+    }
   }
 
   // ---------- Helpers de estado visual ----------

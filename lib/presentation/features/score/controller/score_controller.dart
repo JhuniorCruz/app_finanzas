@@ -21,6 +21,16 @@ class ScoreController extends ChangeNotifier {
   Thresholds _thresholds = defaultThresholds;
   Thresholds get thresholds => _thresholds;
 
+  int _lastSyncedTxVersion = -1;
+  int _lastSyncedDebtVersion = -1;
+  int get lastSyncedTxVersion => _lastSyncedTxVersion;
+  int get lastSyncedDebtVersion => _lastSyncedDebtVersion;
+
+  bool _reloadQueued = false;
+  Thresholds? _queuedThresholds;
+  int? _queuedTxVersion;
+  int? _queuedDebtVersion;
+
   // ---------- RESULTADOS DEL MES ACTUAL ----------
   ScoreFactors? _monthlyFactors;
   ScoreResult? _monthlyResult;
@@ -70,12 +80,25 @@ class ScoreController extends ChangeNotifier {
   /// Carga transacciones y deudas y calcula:
   /// - score mensual (mes de [forMonth], por defecto: ahora)
   /// - score histórico (sobre todo el dataset)
-  Future<void> load([Thresholds? t, DateTime? forMonth]) async {
+  Future<void> load({
+    Thresholds? thresholds,
+    DateTime? forMonth,
+    int? txVersion,
+    int? debtVersion,
+  }) async {
+    if (_loading) {
+      _reloadQueued = true;
+      if (thresholds != null) _queuedThresholds = thresholds;
+      if (txVersion != null) _queuedTxVersion = txVersion;
+      if (debtVersion != null) _queuedDebtVersion = debtVersion;
+      return;
+    }
+
     _loading = true;
     notifyListeners();
 
     try {
-      if (t != null) _thresholds = t;
+      if (thresholds != null) _thresholds = thresholds;
 
       final List<dom.FinanceTx> tx = await _listTx();
       final List<dom.Debt> debts = await _listDebts();
@@ -164,9 +187,27 @@ class ScoreController extends ChangeNotifier {
         savingsRate: savingsT,
       );
       _lifetimeResult = calculateScore(_lifetimeFactors!, _thresholds);
+
+      if (txVersion != null) _lastSyncedTxVersion = txVersion;
+      if (debtVersion != null) _lastSyncedDebtVersion = debtVersion;
     } finally {
       _loading = false;
       notifyListeners();
+
+      if (_reloadQueued) {
+        final nextThresholds = _queuedThresholds;
+        final nextTx = _queuedTxVersion;
+        final nextDebt = _queuedDebtVersion;
+        _reloadQueued = false;
+        _queuedThresholds = null;
+        _queuedTxVersion = null;
+        _queuedDebtVersion = null;
+        await load(
+          thresholds: nextThresholds ?? _thresholds,
+          txVersion: nextTx ?? _lastSyncedTxVersion,
+          debtVersion: nextDebt ?? _lastSyncedDebtVersion,
+        );
+      }
     }
   }
 }
