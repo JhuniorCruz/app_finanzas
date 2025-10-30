@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Android 13+ (SDK 33) requiere permiso para mostrar notificaciones -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="PagoScore"
         android:name="${applicationName}"
