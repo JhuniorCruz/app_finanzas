@@ -1,6 +1,5 @@
 import 'dart:io';
 
-// ignore: unused_import
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
@@ -74,17 +73,27 @@ class NotificationsService {
     Future<void> _safeSchedule(int id, String body, DateTime when) async {
       final now = DateTime.now();
       if (when.isBefore(now)) return;
-      await _plugin.zonedSchedule(
-        id,
-        title,
-        body,
-        tz.TZDateTime.from(when, tz.local),
-        details,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.dateAndTime,
-      );
+      try {
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          tz.TZDateTime.from(when, tz.local),
+          details,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.dateAndTime,
+        );
+      } catch (e, s) {
+        if (kDebugMode) {
+          debugPrint(
+            'NotificationsService: fallo al programar recordatorio '
+            'para deuda $debtId (id $id) en $when: $e',
+          );
+          debugPrint('$s');
+        }
+      }
     }
 
     await _safeSchedule(
@@ -105,6 +114,7 @@ class NotificationsService {
   }
 
   Future<void> cancelForDebt(String debtId) async {
+    await init();
     final base = debtId.hashCode & 0x7fffffff;
     await _plugin.cancel(base);
     await _plugin.cancel(base + 1);

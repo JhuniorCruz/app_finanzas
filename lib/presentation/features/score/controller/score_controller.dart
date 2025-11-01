@@ -151,7 +151,7 @@ class ScoreController extends ChangeNotifier {
       );
       _monthlyResult = calculateScore(_monthlyFactors!, _thresholds);
 
-      // ===== HISTÓRICO TOTAL =====
+      // ===== PUNTAJE HISTÓRICO TOTAL =====
       final incomesT = tx
           .where((t) => t.type == 'income')
           .fold<double>(0, (s, t) => s + t.amount);

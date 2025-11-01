@@ -65,11 +65,20 @@ class DebtsController extends ChangeNotifier {
       await load();
       // Programar notificaciones para la nueva deuda
       if (!d.paid && _remindersEnabled) {
-        await NotificationsService.instance.scheduleForDebt(
-          debtId: d.id,
-          title: 'Pago de ${d.title}',
-          dueDate: d.dueDate,
-        );
+        try {
+          await NotificationsService.instance.scheduleForDebt(
+            debtId: d.id,
+            title: 'Pago de ${d.title}',
+            dueDate: d.dueDate,
+          );
+        } catch (e, s) {
+          if (kDebugMode) {
+            debugPrint(
+              'DebtsController: no se pudo programar recordatorio para ${d.id}: $e',
+            );
+            debugPrint('$s');
+          }
+        }
       }
     } catch (e) {
       _setError(e.toString());
