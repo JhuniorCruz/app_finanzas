@@ -30,8 +30,8 @@ import 'package:app_finanzas/presentation/features/settings/controller/settings_
 import 'package:app_finanzas/presentation/features/simulator/controller/simulator_controller.dart';
 import 'package:app_finanzas/presentation/features/transactions/controller/transactions_controller.dart';
 import 'package:app_finanzas/presentation/features/score/controller/score_controller.dart';
+import 'package:app_finanzas/presentation/features/advisor/controller/advisor_controller.dart';
 
-//import 'package:app_finanzas/data/repositories/auth_repository_impl.dart';
 import 'package:app_finanzas/presentation/features/auth/controller/auth_controller.dart';
 
 //SUPABASE
@@ -137,6 +137,17 @@ Future<List<SingleChildWidget>> buildProviders(SharedPreferences prefs) async {
           );
         }
         return controller;
+      },
+    ),
+    ChangeNotifierProxyProvider4<ScoreController, SettingsController,
+        TransactionsController, DebtsController, AdvisorController>(
+      create: (context) => AdvisorController(
+          Provider.of<ScoreController>(context, listen: false),
+          Provider.of<SettingsController>(context, listen: false),
+          Provider.of<TransactionsController>(context, listen: false),
+          Provider.of<DebtsController>(context, listen: false)),
+      update: (context, score, settings, tx, debts, advisor) {
+        return advisor ?? AdvisorController(score, settings, tx, debts);
       },
     ),
   ];

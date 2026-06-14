@@ -12,6 +12,7 @@ class BottomNav extends StatelessWidget {
     final items = const [
       (Icons.home_rounded, 'Inicio'),
       (Icons.account_balance_wallet_rounded, 'Deudas'),
+      (Icons.chat_bubble_outline_rounded, 'Asesor'),
       (Icons.calculate_rounded, 'Simular'),
       (Icons.settings_rounded, 'Ajustes'),
     ];

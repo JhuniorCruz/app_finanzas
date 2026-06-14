@@ -5,6 +5,7 @@ import '../features/dashboard/view/dashboard_page.dart';
 import '../features/debts/view/debts_page.dart';
 import '../features/simulator/view/simulator_page.dart';
 import '../features/settings/view/settings_page.dart';
+import '../features/advisor/view/advisor_page.dart';
 import '../widgets/bottom_nav.dart';
 
 // Auth pages (flujo)
@@ -83,6 +84,7 @@ class _AppShellState extends State<AppShell> {
   final _pages = const [
     DashboardPage(),
     DebtsPage(),
+    AdvisorPage(),
     SimulatorPage(),
     SettingsPage(),
   ];
